@@ -18,9 +18,10 @@ async def set_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text('User isn`t defined')
         return
     
-    add_token(user.id, context.args[1])
+    add_token(user.id, float(context.args[1]))
 
     await update.effective_message.reply_text(f'Done!')
+
 
 
 

@@ -19,6 +19,7 @@ class AiConfig:
         self.model_name = "GigaChat-2-Max"
         self.model_kwargs = {}
         self.base_api_key = os.getenv("BASIC_API_KEY")
+        self.access_token = None
 
 
 

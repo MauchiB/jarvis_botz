@@ -6,6 +6,7 @@ import dotenv
 
 from jarvis_botz.bot.database import add_token, add_user, remove_token, get_user, change_role
 from jarvis_botz.utils import require_start, get_attr_table, check_user
+from telegram.helpers import escape_markdown
 
 
 style = 0
@@ -27,7 +28,7 @@ async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.effective_message.reply_text('Typing...')
 
     async for out in graph.model.astream({
-        'input': ' '.join(update.effective_message.text),
+        'input': update.effective_message.text,
         'style': context.user_data.get('style', 'helpful assistant')},
         
         config={'configurable':{'session_id': str(update.effective_user.id)}}
@@ -37,7 +38,11 @@ async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
         
         collected_text += out.content
+
         await msg.edit_text(collected_text)
+
+
+    await msg.edit_text(collected_text, parse_mode='HTML')
 
 
     remove_token(id=update.effective_user.id, num=0.5)
@@ -95,11 +100,12 @@ async def promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return
 
+
     if context.args[0] == admin_promo:
-        change_role(update.effective_user.id, 'admin')
+        change_role(update.effective_user.id, role='admin')
 
     elif context.args[0] == dev_promo:
-        change_role(update.effective_user.id, 'developer')
+        change_role(update.effective_user.id, role='developer')
 
     else:
         await update.effective_message.reply_text('Something goes wrong')
@@ -111,9 +117,9 @@ async def promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_start
 async def get_user_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(id=update.effective_user.id)
-    print(user)
     if not user:
         await update.effective_message.reply_text('User isn`t defined')
+        return
     
     text = get_attr_table(user)
 

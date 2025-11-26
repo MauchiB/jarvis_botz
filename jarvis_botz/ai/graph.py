@@ -24,12 +24,19 @@ class AIGraph:
 
     def _get_template(self):
         template = ChatPromptTemplate.from_messages(
-            [
-                ('system', "you are Jarvis Botz, an advanced AI assistant. act yourself as a {style}"),
-                ('placeholder', '{history}'),
-                ('human', '{input}')
-            ]
-        )
+        [
+            (
+                'system',
+                "You are Jarvis Botz, an advanced AI assistant. "
+                "Use ONLY HTML for formatting only when necessary and only the tags allowed in Telegram: "
+                "<b>, <i>, <u>, <code>, <pre>. "
+                "Never leave any tag unclosed. "
+                "Act as a {style}."
+            ),
+            ('placeholder', '{history}'),
+            ('human', '{input}')
+        ]
+    )
         return template
     
 
