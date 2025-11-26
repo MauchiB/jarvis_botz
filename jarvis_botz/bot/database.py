@@ -2,6 +2,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Float
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import or_
 
+
 engine = create_engine('sqlite:///base.db', echo=False)
 
 

@@ -7,19 +7,17 @@ def get_attr_table(user):
         value = getattr(user, column.name)
         info += f'{column.name} - {value} \n'
 
+
     return info
 
 
 
-def check_token(type:str, user):
+def check_user(type:str, id):
+    user = get_user(id=id)
     tokens = user.tokens
-    if type == 'TEXT' and tokens >= 0.5:
-            return True
-    elif type == 'IMAGE' and tokens >= 10:
-            return True
-    else:
-        False
-
+    if not type == 'TEXT' and tokens >= 0.5 or type == 'IMAGE' and tokens >= 10:
+            return f'You haven`t enough token \nTOKENS - {tokens}'
+    else: return False
 
 
 def require_start(func):

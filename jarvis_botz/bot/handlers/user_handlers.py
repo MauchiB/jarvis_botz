@@ -4,9 +4,8 @@ from jarvis_botz.ai.graph import graph
 import os
 import dotenv
 
-
 from jarvis_botz.bot.database import add_token, add_user, remove_token, get_user, change_role
-from jarvis_botz.utils import require_start, get_attr_table, check_token
+from jarvis_botz.utils import require_start, get_attr_table, check_user
 
 
 style = 0
@@ -17,14 +16,11 @@ style = 0
         
 @require_start
 async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(update.effective_user.id)
-
-    if not check_token(type='TEXT', user=user):
-        await update.effective_message.reply_text(f'''You haven`t enough tokens to write to Jarvis:
-                                                  \nTOKENS: {user.tokens}''')
+    check = check_user(type='TEXT', id=update.effective_user.id)
+    if check:
+        await update.effective_message.reply_text(f'{check}')
         return
     
-
 
     collected_text = ''
 
@@ -38,13 +34,13 @@ async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ):
 
         if 'finish_reason' in out.response_metadata:
-            return
+            continue
         
         collected_text += out.content
         await msg.edit_text(collected_text)
 
 
-    remove_token(user.id, 0.5)
+    remove_token(id=update.effective_user.id, num=0.5)
     
 
     
@@ -115,6 +111,7 @@ async def promo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @require_start
 async def get_user_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(id=update.effective_user.id)
+    print(user)
     if not user:
         await update.effective_message.reply_text('User isn`t defined')
     

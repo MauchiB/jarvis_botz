@@ -6,7 +6,7 @@ import dotenv
 
 
 from jarvis_botz.bot.database import add_token, add_user, remove_token, get_user, change_role
-from jarvis_botz.utils import admin_require, require_start, check_token, get_attr_table
+from jarvis_botz.utils import admin_require, require_start, check_user, get_attr_table
 
 
 
