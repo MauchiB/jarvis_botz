@@ -1,12 +1,28 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float
+from sqlalchemy import create_engine, Column, Integer, String, Float, select, BigInteger
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import or_
 
+import dotenv
+dotenv.load_dotenv()
+import os
 
-engine = create_engine('sqlite:///base.db', echo=False)
+
+POSTGRES_USER = os.getenv("POSTGRES_USER")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT")
+POSTGRES_DB = os.getenv("POSTGRES_DB")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST")
+
+url = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{POSTGRES_DB}"
+engine = create_async_engine(
+    url,
+    echo=False
+    )
 
 
-SessionLocal = sessionmaker(bind=engine, autoflush=True)
+
+SessionLocal = sessionmaker(bind=engine, class_=AsyncSession, autoflush=True)
 
 Base = declarative_base()
 
@@ -15,7 +31,7 @@ class User(Base):
     __tablename__ = 'users'
 
 
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True)
     username = Column(String, unique=True)
     tokens = Column(Float, default=10)
     role = Column(String, default='user')
@@ -25,53 +41,56 @@ class User(Base):
 
 
 
-def get_user(id=None, username=None):
-    with SessionLocal() as session:
-        user = session.query(User).filter(or_(User.id == id, User.username == username)).first()
+async def get_user(id=None, username=None):
+    async with SessionLocal() as session:
+        stmt = select(User).filter(or_(User.id == id, User.username == username))
+        result = await session.execute(stmt)
+        user = result.scalars().first()  # scalars() превращает Row в объект модели
         return user
     
 
-def add_user(id, username):
-    with SessionLocal() as session:
-        if session.query(User).filter_by(id=id).first():
-            return False
+async def add_user(id, username):
+    async with SessionLocal() as session:
         user = User(id=id, username=username)
         session.add(user)
-        session.commit()
+        await session.commit()
         return user
     
 
-def add_token(id, num):
-    with SessionLocal() as session:
-        user = session.get(User, id)
+async def add_token(id, num):
+    async with SessionLocal() as session:
+        user = await session.get(User, id)
         if not user:
             return False
+
         
         user.tokens += num
-        session.commit()
+        await session.commit()
         return True
     
 
-def remove_token(id, num):
-    with SessionLocal() as session:
-        user = session.get(User, id)
+async def remove_token(id, num):
+    async with SessionLocal() as session:
+        user = await session.get(User, id)
         if not user:
             return False
         
         user.tokens -= num
-        session.commit()
+        await session.commit()
         return True
     
 
 
-def change_role(id=None, username=None, role:str='user'):
-    with SessionLocal() as session:
-        user = session.query(User).filter(or_(User.id == id, User.username == username)).first()
+async def change_role(id=None, username=None, role:str='user'):
+    async with SessionLocal() as session:
+        stmt = select(User).filter(or_(User.id == id, User.username == username))
+        result = await session.execute(stmt)
+        user = result.scalars().first()  # scalars() превращает Row в объект модели
         if not user:
             return False
         
         user.role = role
-        session.commit()
+        await session.commit()
         return True
     
     

@@ -8,11 +8,17 @@ import os
 import logging
 
 from jarvis_botz.config import config
-
+import asyncio
 from jarvis_botz.bot.database import Base, engine
 
 
-Base.metadata.create_all(bind=engine)
+async def init_db(engine):
+    async with engine.begin() as conn:
+        # создаёт все таблицы асинхронно
+        await conn.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+
+asyncio.run(init_db(engine))
 
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -48,9 +54,12 @@ app.add_handler(CommandHandler('change', change_user_role))
 
 
 
+
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_answer))
 
     
 
 app.run_polling()
+
+
 

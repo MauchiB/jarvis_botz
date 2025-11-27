@@ -4,6 +4,12 @@ from jarvis_botz.config import aiconfig, AiConfig
 from langchain_community.chat_message_histories import ChatMessageHistory, RedisChatMessageHistory
 from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate
+import os
+
+import logging
+import redis
+
+logger = logging.getLogger(__name__)
 
 class AIGraph:
     def __init__(self, cfg: AiConfig):
@@ -16,27 +22,25 @@ class AIGraph:
 
 
 
-    def _get_session_id(self, id: str) -> str:
-        if id not in self.data:
-            self.data[id] = ChatMessageHistory()
-        return self.data[id]
+    def _get_session_id(self, session_id: str) -> str:
+        server_url = os.getenv("REDIS_URL")
+        session_id = str(session_id)
+        history = RedisChatMessageHistory(session_id=session_id, url=f'redis://{server_url}:6379')
+        return history
     
 
     def _get_template(self):
         template = ChatPromptTemplate.from_messages(
-        [
-            (
-                'system',
-                "You are Jarvis Botz, an advanced AI assistant. "
-                "Use ONLY HTML for formatting only when necessary and only the tags allowed in Telegram: "
-                "<b>, <i>, <u>, <code>, <pre>. "
-                "Never leave any tag unclosed. "
-                "Act as a {style}."
-            ),
-            ('placeholder', '{history}'),
-            ('human', '{input}')
-        ]
-    )
+            [
+                (
+                    'system',
+                    "You are Jarvis Botz, an advanced AI assistant.\n"
+                    "Act strictly as a {style}."
+                ),
+                ('placeholder', '{history}'),
+                ('human', '{input}')
+            ]
+        )
         return template
     
 
@@ -49,6 +53,7 @@ class AIGraph:
                                          input_messages_key='input', 
                                          output_messages_key='output',
                                          history_messages_key='history')
+        
         
         return run
 

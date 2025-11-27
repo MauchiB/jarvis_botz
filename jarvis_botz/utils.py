@@ -12,8 +12,8 @@ def get_attr_table(user):
 
 
 
-def check_user(type:str, id):
-    user = get_user(id=id)
+async def check_user(type:str, id):
+    user = await get_user(id=id)
     tokens = user.tokens
     if not type == 'TEXT' and tokens >= 0.5 or type == 'IMAGE' and tokens >= 10:
             return f'You haven`t enough token \nTOKENS - {tokens}'
@@ -22,7 +22,7 @@ def check_user(type:str, id):
 
 def require_start(func):
     async def wrapper(update, context):
-        if not get_user(update.effective_user.id):
+        if not await get_user(update.effective_user.id):
             await update.effective_message.reply_text(
                 "Please use /start first to initialize your account."
             )
@@ -34,7 +34,7 @@ def require_start(func):
 
 def admin_require(func):
     async def wrapper(update, context):
-        user = get_user(update.effective_user.id)
+        user = await get_user(update.effective_user.id)
         if not user:
             return
         
