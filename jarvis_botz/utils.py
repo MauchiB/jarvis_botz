@@ -1,4 +1,10 @@
 from jarvis_botz.bot.database import get_user
+from jarvis_botz.config import config
+import os
+
+
+
+
 
 def get_attr_table(user):
     info = ''
@@ -17,7 +23,7 @@ async def check_user(type:str, id):
     tokens = user.tokens
     if not type == 'TEXT' and tokens >= 0.5 or type == 'IMAGE' and tokens >= 10:
             return f'You haven`t enough token \nTOKENS - {tokens}'
-    else: return False
+    else: return user
 
 
 def require_start(func):

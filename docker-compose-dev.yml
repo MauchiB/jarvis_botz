@@ -1,25 +1,8 @@
 services:
 
-
-  bot:
-    build: .
-    depends_on:
-      - postgres
-      - redis
-
-    environment:
-      REDIS_URL: redis
-
-    networks:
-      - appnet
-
-
   redis:
     image: redis:alpine3.22
-    restart: always
 
-    volumes:
-      - redis-data:/data
 
     ports:
       - "6379:6379"
@@ -30,10 +13,7 @@ services:
   
   postgres:
     image: postgres:15.15-trixie
-    restart: always
 
-    volumes:
-      - db-data:/var/lib/postgresql/data
 
     environment:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -49,11 +29,4 @@ services:
 networks:
   appnet: {}
 
-volumes:
-  db-data:
-  redis-data:
 
-
-
-
-  

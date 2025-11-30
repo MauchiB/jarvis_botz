@@ -9,6 +9,7 @@ class Config:
     def __init__(self):
         
         self.telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        self.stage = 'dev'
 
 
 
