@@ -5,9 +5,13 @@ from jarvis_botz.bot.handlers.user_handlers import (
                                                 generate_answer,
                                                 state_token, start,
                                                 get_user_user, style,
-                                                set_settings, menu_callback, select_callback
+                                                set_settings, menu_callback, setting_select
+                                                
 
                                                 )
+
+from jarvis_botz.bot.handlers.chat_handlers import (chat_list, chat_select, create_chat,
+                                                    state_chat_name)
 import os
 import logging
 
@@ -65,14 +69,20 @@ def main():
     app.add_handler(MessageHandler(filters.Regex('^⚙️ Настройки$'), set_settings))
 
         # Новый Чат
-    app.add_handler(MessageHandler(filters.Regex('^🗑️ Новый Чат$'), None))
+    app.add_handler(MessageHandler(filters.Regex('^🗑️ Чаты$'), chat_list))
+
+
+    app.add_handler(MessageHandler(filters.Regex('^➕ Создать новый чат$'), create_chat))
 
     # Инструменты
     app.add_handler(MessageHandler(filters.Regex('^🛠️ Инструменты$'), None))
 
+    app.add_handler(CallbackQueryHandler(chat_select, pattern=r'^chat:(\w+):.+$'))
 
-    app.add_handler(CallbackQueryHandler(select_callback, pattern=r'^(\w+):(select|quit):.+$'))
     app.add_handler(CallbackQueryHandler(menu_callback, pattern=r'^(\w+):page:\d+$'))
+
+    app.add_handler(CallbackQueryHandler(setting_select, pattern=r'^(\w+):(\w+):.+$'))
+
 
 
 
@@ -85,7 +95,7 @@ def main():
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, generate_answer))
 
-
+    
     app.add_error_handler(error_handler)
 
         

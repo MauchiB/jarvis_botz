@@ -5,46 +5,36 @@ from jarvis_botz.ai.graph import graph
 import os
 import dotenv
 
-from jarvis_botz.bot.database import add_user, get_user, _set_attr
-from jarvis_botz.utils import require_start, get_attr_table, check_user
-from jarvis_botz.bot.keyboards import start_keyboard, setting_keyboard_markup, data_items, create_grid_paged_menu
+from jarvis_botz.bot.database import add_user, get_user, _set_attr, get_chat_redis
+from jarvis_botz.utils import control_tokens, check_user, required_permission, get_attr_table
+from jarvis_botz.bot.keyboards import start_keyboard, setting_keyboard_markup, data_items
+from jarvis_botz.utils import create_grid_paged_menu, initialize_new_chat_session
+
 
 from telegram.helpers import escape_markdown
+from telegram.ext import BasePersistence
 
 
 style = 0
 
-
 import logging
-import redis
 
 logger = logging.getLogger(__name__) 
+
             
 
 
 
+@check_user()
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = await get_user(update.effective_user.id)
-    if not user:
-        user = await add_user(update.effective_user.id, update.effective_user.username)
-
-    await update.message.reply_text("Hello! I'm Jarvis Botz. How can I serve to you today?",
+    await update.message.reply_text("Привет! Я Jarvis ваш персональный AI-ассистент. Как я могу служить вам сегодня? (/help для подробной информации)",
                                     reply_markup=start_keyboard)
     
 
 
-        
-@require_start
+@check_user(need_chat=True)
+@control_tokens(required_tokens=0.5)
 async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    check = await check_user(type='TEXT', id=update.effective_user.id)
-    if isinstance(check, str):
-        await update.effective_message.reply_text(f'{check}')
-        return
-    
-
-    await _set_attr(id=update.effective_user.id, column='tokens', value=check.tokens - 0.5)
-
-    msg = await update.effective_message.reply_text('Typing...')
 
     input = {
         'style': context.user_data.get('style', 'helpful assistant'),
@@ -53,12 +43,21 @@ async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     config = {
         'configurable': {
         'temperature': context.user_data.get('temperature', 0.7),
-        'session_id': str(update.effective_user.id)}
-                }
-
-    await graph._text_generation(msg, update, context, input, config, streaming=True)
+        'session_id': context.user_data.get('current_chat_id'),
+                }}
     
-    await msg.edit_text(escape_markdown(context.user_data['last_sent_text'] + "\u200B", 1), parse_mode='Markdown')
+    msg = await update.effective_message.reply_text('Пишу ответ... ⏳')
+
+    answer = await graph.text_generation(msg, update, context, input, config, streaming=True)
+
+    await msg.edit_text(escape_markdown(answer + "\u200B", 2), parse_mode='MarkdownV2')
+
+    if context.user_data.get('creating_chat', False):
+        await initialize_new_chat_session(update, context, question=input['input'], answer=answer, session_id=context.user_data['current_chat_id'])
+        context.user_data['creating_chat'] = False
+
+        
+
 
 
 
@@ -66,50 +65,55 @@ async def generate_answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
 
 
-@require_start
+@check_user()
 async def set_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.effective_message.edit_text('Choose options:', reply_markup=setting_keyboard_markup)
+        return
+
     await update.effective_message.reply_text('Choose options:', reply_markup=setting_keyboard_markup)
     return style
 
 
-@require_start
-async def quit_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.effective_message.reply_text('Choose options:', reply_markup=setting_keyboard_markup)
-    return style
 
-
-@require_start
+@check_user()
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     callback = update.callback_query
     await callback.answer()
     args = callback.data.split(':')
-    prefix, page = args[0], args[2]
+    prefix, action, page = args[0], args[1], args[2]
     items = data_items[prefix]
-    keyboard = create_grid_paged_menu(all_items=items, prefix=prefix, page=int(page), col=2, row=3)
+    keyboard = create_grid_paged_menu(all_items=items, prefix=prefix, action='select',
+                                      page=int(page), col=2, row=3)
     await update.effective_message.edit_text(f'Choose {prefix} for the bot:', reply_markup=keyboard)
 
 
-@require_start
-async def select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+@check_user()
+async def setting_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
     callback = update.callback_query
     await callback.answer()
     args = callback.data.split(':')
     prefix, action, value = args[0], args[1], args[2]
 
+
     if action == 'select':
         context.user_data[prefix] = value
+        await set_settings(update, context)
 
-    if action == 'quit' and value == 'start':
+    if action == 'quit' and value == '_quit_delete':
         await callback.delete_message()
     
-    else: #action == 'quit' and value == 'select':
-        await update.effective_message.edit_text('Choose options:', reply_markup=start_keyboard)
+    if action == 'quit' and value == '_quit_return':
+        await set_settings(update, context)
 
 
 
 
 
-@require_start
+
+
+@check_user()
 async def state_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
      user = await get_user(update.effective_user.id)
      await update.effective_message.reply_text(f'You have {user.tokens} tokens')
@@ -117,7 +121,7 @@ async def state_token(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-@require_start
+@check_user()
 async def get_user_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await get_user(id=update.effective_user.id)
     if not user:

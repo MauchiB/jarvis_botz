@@ -32,7 +32,7 @@ class AIGraph:
             server_url = os.getenv("REDIS_URL")
             
         session_id = str(session_id)
-        history = RedisChatMessageHistory(session_id=session_id, url=f'redis://{server_url}:6379')
+        history = RedisChatMessageHistory(session_id=session_id, url=f'redis://{server_url}:6379', ttl=60*60*24)
         return history
     
 
@@ -68,7 +68,7 @@ class AIGraph:
 
     def initizialize_model(self):
         access_token = self.get_access_token()
-        model = GigaChat(model="GigaChat-2-Pro", temperature=0.7,
+        model = GigaChat(model="GigaChat", temperature=0.7,
                   access_token=access_token,
                   verify_ssl_certs=False,
                   )
@@ -98,9 +98,12 @@ class AIGraph:
         return access_token
     
 
-    async def _text_generation(self, msg, update:Update, context:ContextTypes,
+    async def text_generation(self, msg, update:Update, context:ContextTypes,
                                input: dict, config: dict = None,
                                streaming: bool = False):
+        
+        if msg is None:
+                raise ValueError('msg must be provided for text generation.')
         
         if not streaming:
             answer = await self.model.ainvoke(
@@ -108,15 +111,12 @@ class AIGraph:
                 config=config
             )
             await msg.edit_text(answer.content)
-            context.user_data['last_sent_text'] = collected_text
+            return answer.content
         
 
         if streaming:
-            if msg is None:
-                raise ValueError('msg must be provided for streaming mode')
-            
+            last_sent_text = ''
             collected_text = ''
-            last_sent_text = context.user_data.get('last_sent_text', '')
 
 
             async for out in graph.model.astream(
@@ -129,9 +129,31 @@ class AIGraph:
                 if len(collected_text) > len(last_sent_text): 
                     try:
                         await msg.edit_text(collected_text)
-                        context.user_data['last_sent_text'] = collected_text
+                        last_sent_text = collected_text
                     except Exception as e:
                         pass
+            
+            return collected_text
+
+
+    async def name_generation(self, question:str, answer:str) -> str:
+        messages = ChatPromptTemplate.from_messages([
+    (
+        "system",
+        # 🎯 Добавлено требование сохранить язык
+        "You are a helpful assistant that generates short and relevant chat names based on the conversation between the user and the AI. "
+        "The generated name **MUST be in the same language** as the provided User and AI text. " 
+        "Provide a concise name that captures the essence of the discussion in **NO MORE THAN 5 WORDS**. "
+        "The output must contain ONLY the generated title, with absolutely no quotes, introductions, or extra commentary."
+    ),
+    (
+        "user",
+        f"Based on the following interaction, suggest a short and relevant name for the chat:\n\nUser: {question}\nAI: {answer}\n\nChat Name:"
+    ),
+    ])
+
+        response = await self.base_model.ainvoke(input=messages.format_messages())
+        return response.content.strip()
 
 
 

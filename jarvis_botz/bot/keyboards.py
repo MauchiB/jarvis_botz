@@ -2,59 +2,9 @@ from telegram import (Update, ReplyKeyboardMarkup,
                        ReplyKeyboardRemove, KeyboardButton,
                          InlineKeyboardButton, InlineKeyboardMarkup)
 
-
-
 from telegram.ext import (ContextTypes, ConversationHandler)
 import math
-
-def create_grid_paged_menu(all_items: list[tuple[str, str]], prefix:str, page: int = 0, col: int = 1, row: int = 1) -> InlineKeyboardMarkup:
-    ITEMS_PER_PAGE = col * row
-
-    total_items = len(all_items)
-    
-    total_pages = math.ceil(total_items / ITEMS_PER_PAGE)
-    
-    page = max(0, min(page, total_pages - 1))
-
-    start_index = page * ITEMS_PER_PAGE
-    end_index = start_index + ITEMS_PER_PAGE
-    page_items = all_items[start_index:end_index]
-    
-    keyboard = []
-    current_row = []
-    
-    for i, button in enumerate(page_items):
-        current_row.append(button)
-        
-
-        if len(current_row) == col or i == len(page_items) - 1:
-            keyboard.append(current_row)
-            current_row = []
-
-    nav_row = []
-    
-
-    if page > 0:
-        nav_row.append(InlineKeyboardButton("⬅️ Back", callback_data=f"{prefix}:page:{page - 1}"))
-    else:
-        nav_row.append(InlineKeyboardButton(" ", callback_data="ignore")) 
-        
-    nav_row.append(InlineKeyboardButton(f"Page. {page + 1}/{total_pages}", callback_data="ignore"))
-    
-
-    if page < total_pages - 1:
-        nav_row.append(InlineKeyboardButton("Forward ➡️", callback_data=f"{prefix}:page:{page + 1}"))
-    else:
-        nav_row.append(InlineKeyboardButton(" ", callback_data="ignore"))
-
-
-    if nav_row:
-        keyboard.append(nav_row)
-        
-    keyboard.append([InlineKeyboardButton("❌ Quit", callback_data=f'{prefix}:quit:select')])
-
-    return InlineKeyboardMarkup(keyboard)
-    
+from typing import List, Tuple
 
 
 
@@ -63,7 +13,8 @@ keyboard = [
     [KeyboardButton('⚙️ Настройки'), KeyboardButton('ℹ️ Инфо')],
     
     # Ряд 2: Действия и Режимы
-    [KeyboardButton('🗑️ Новый Чат'), KeyboardButton('🛠️ Инструменты')]
+    [KeyboardButton('🗑️ Чаты'), KeyboardButton('🛠️ Инструменты')],
+    [KeyboardButton('➕ Создать новый чат')]
 ]
 
 start_keyboard = ReplyKeyboardMarkup(
@@ -74,12 +25,7 @@ start_keyboard = ReplyKeyboardMarkup(
 )
 
 
-start_keyboard = ReplyKeyboardMarkup(
-    keyboard=keyboard,
-    resize_keyboard=True,
-    input_field_placeholder='input text commands',
-    is_persistent=True
-)
+
 
 
 
@@ -97,7 +43,7 @@ setting_keyboard = [
      InlineKeyboardButton('🌍 Язык', callback_data='language:page:0')],
      
     # ⬆️ Важное дополнение для UX: кнопка "Назад"
-    [InlineKeyboardButton('« Назад', callback_data='settings:quit:start')]
+    [InlineKeyboardButton('« Назад', callback_data='setting:quit:_quit_delete')]
 ]
 
 setting_keyboard_markup = InlineKeyboardMarkup(
