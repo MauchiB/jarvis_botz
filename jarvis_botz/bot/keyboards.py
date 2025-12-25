@@ -39,7 +39,7 @@ setting_keyboard = [
      InlineKeyboardButton('🗜️ Длина ответа', callback_data='max_tokens:page:0')],
      
     # Ряд 3: Лимиты и Язык
-    [InlineKeyboardButton('📊 Лимиты', callback_data='usage_limits:page:0'),
+    [InlineKeyboardButton('📊 Лимиты', callback_data='developing:page:0'),
      InlineKeyboardButton('🌍 Язык', callback_data='language:page:0')],
      
     # ⬆️ Важное дополнение для UX: кнопка "Назад"
@@ -51,25 +51,29 @@ setting_keyboard_markup = InlineKeyboardMarkup(
 )
 
 system_prompts = [
-    # --- 🛠️ Основные Функциональные ---
-    InlineKeyboardButton("👤 Свой Профиль", callback_data="system_prompt:select:custom"), 
-    InlineKeyboardButton("👨‍🏫 Наставник", callback_data="system_prompt:select:mentor"),
-    InlineKeyboardButton("📝 Редактор", callback_data="system_prompt:select:editor"),
-    InlineKeyboardButton("💡 Креативщик", callback_data="system_prompt:select:creative"),
-    InlineKeyboardButton("🚀 Эксперт по коду", callback_data="system_prompt:select:code_expert"),
-    
-    # --- 🧠 Аналитические и Принятие Решений ---
-    InlineKeyboardButton("⚖️ Аргументатор (За/Против)", callback_data="system_prompt:select:argumentator"), # Оставил пояснение, так как это ключевая функция
-    InlineKeyboardButton("🤔 Критик", callback_data="system_prompt:select:critic"), 
-    InlineKeyboardButton("📊 Аналитик (Таблицы/Тезисы)", callback_data="system_prompt:select:data_analyst"),
-    
-    # --- 🗺️ Специфические Эксперты ---
-    InlineKeyboardButton("🌍 Переводчик", callback_data="system_prompt:select:translator"),
-    InlineKeyboardButton("📚 Энциклопедист", callback_data="system_prompt:select:encyclopedist"), 
-    
-    # --- 🤪 Абсурдные/Развлекательные ---
-    InlineKeyboardButton("🤡 Тролль", callback_data="system_prompt:select:troll"), 
-    InlineKeyboardButton("🤫 Секретный Агент", callback_data="system_prompt:select:secret_agent"),
+    # --- 🧠 ИНТЕЛЛЕКТУАЛЬНЫЙ ЦЕНТР (Power Roles) ---
+    InlineKeyboardButton("🏛 Архитектор Логики", callback_data="system_prompt:select:architect"),  # Глубокое решение задач
+    InlineKeyboardButton("🕵️ Исследователь (OSINT)", callback_data="system_prompt:select:researcher"), # Поиск и проверка фактов
+    InlineKeyboardButton("💡 Стратег (Game Theory)", callback_data="system_prompt:select:strategist"), # Планирование и тактика
+    InlineKeyboardButton("⚖️ Профи-Консультант", callback_data="system_prompt:select:consultant"),   # Бизнес, право, финансы
+
+    # --- 🛠️ МАСТЕР ИНСТРУМЕНТОВ (Utility Experts) ---
+    InlineKeyboardButton("🚀 Senior Fullstack", callback_data="system_prompt:select:senior_dev"),  # Код, архитектура, безопасность
+    InlineKeyboardButton("🎨 Prompt-Инженер", callback_data="system_prompt:select:prompt_master"), # Создает идеальные промпты
+    InlineKeyboardButton("📈 Маркетолог-Психолог", callback_data="system_prompt:select:marketer"), # Тексты, которые цепляют
+    InlineKeyboardButton("✍️ Главный Редактор", callback_data="system_prompt:select:chief_editor"), # Доводит любой текст до идеала
+
+    # --- 🌌 АТМОСФЕРА И ВАЙБ (Vibe & Character) ---
+    InlineKeyboardButton("🦾 Кибер-Разум (2077)", callback_data="system_prompt:select:cyber_mind"), # Футуристичный, холодный, точный
+    InlineKeyboardButton("🌿 Стоик-Философ", callback_data="system_prompt:select:stoic"),          # Мудрость, спокойствие, смысл
+    InlineKeyboardButton("🎭 Теневой Игрок", callback_data="system_prompt:select:shadow"),        # Хитрость, обход ограничений, нестандарт
+    InlineKeyboardButton("🔥 Твой Соперник", callback_data="system_prompt:select:rival"),         # Подначивает, мотивирует, критикует
+
+    # --- 🛠️ ЭКСПЕРТЫ ПО ЖИЗНИ (Life & Security) ---
+    InlineKeyboardButton("⚡️ Билдер-Биохакер", callback_data="system_prompt:select:biohacker"),   # Здоровье и продуктивность
+    InlineKeyboardButton("⚖️ Юрист-Детектив", callback_data="system_prompt:select:legal_expert"), # Защита и документы
+    InlineKeyboardButton("💎 Крипто-Венчур", callback_data="system_prompt:select:financier"),    # Рынки и капитал
+    InlineKeyboardButton("🧹 Решала (The Fixer)", callback_data="system_prompt:select:fixer"),   # Выход из тупиковых ситуаций
 ]
 
 max_tokens = [
@@ -86,80 +90,37 @@ languages = [
 ]
 
 styles = [
-    # Ваши существующие стили (сокращенные)
-    InlineKeyboardButton("💬 Разговорный", callback_data="style:select:casual"),
-    InlineKeyboardButton("💡 Креативный", callback_data="style:select:creative"),
-    InlineKeyboardButton("📚 Академический", callback_data="style:select:academic"),
-    InlineKeyboardButton("😄 Юмористический", callback_data="style:select:humorous"),
-    InlineKeyboardButton("🔬 Технический", callback_data="style:select:technical"),
-    InlineKeyboardButton("📌 Краткий", callback_data="style:select:concise"),
-    InlineKeyboardButton("📰 Объективный", callback_data="style:select:journalistic"),
-    
-    # --- 💼 Профессиональные и Функциональные ---
-    InlineKeyboardButton("💼 Строгий", callback_data="style:select:formal"),
-    InlineKeyboardButton("👨‍⚖️ Юридический", callback_data="style:select:legal"),
-    InlineKeyboardButton("📊 Тезисный", callback_data="style:select:slide"),
-    InlineKeyboardButton("📝 Редактор", callback_data="style:select:editor"),
-    InlineKeyboardButton("👩‍🏫 Педагог", callback_data="style:select:tutor"),
-    
-    # --- 🎭 Ролевые и Исторические ---
-    InlineKeyboardButton("🏴‍☠️ Пират", callback_data="style:select:pirate"),
-    InlineKeyboardButton("👑 Рыцарь", callback_data="style:select:knight"),
-    InlineKeyboardButton("🎩 Джентльмен", callback_data="style:select:victorian"),
-    InlineKeyboardButton("🤖 Ретро-ПК", callback_data="style:select:retro_pc"),
-    InlineKeyboardButton("👽 Инопланетянин", callback_data="style:select:alien"),
-    InlineKeyboardButton("🤠 Ковбой", callback_data="style:select:cowboy"),
-    InlineKeyboardButton("🧙‍♂️ Волшебник", callback_data="style:select:wizard"),
-    InlineKeyboardButton("🦸 Супергерой", callback_data="style:select:superhero"),
-    InlineKeyboardButton("👶 Ребенок", callback_data="style:select:child"),
-    InlineKeyboardButton("🌸 Аниме/Манга", callback_data="style:select:anime"), # <-- НОВЫЙ СТИЛЬ
-    
-    # --- 🎨 Литературные и Художественные ---
-    InlineKeyboardButton("📜 Поэтический", callback_data="style:select:poet"),
-    InlineKeyboardButton("🖋️ Эпический", callback_data="style:select:epic"),
-    InlineKeyboardButton("🔮 Философский", callback_data="style:select:philosopher"),
-    InlineKeyboardButton("🎶 Тексты песен", callback_data="style:select:lyricist"),
-    InlineKeyboardButton("🌌 Sci-Fi", callback_data="style:select:scifi"),
-    InlineKeyboardButton("🤫 Шепот", callback_data="style:select:whisper"),
-    InlineKeyboardButton("🎭 Драматический", callback_data="style:select:drama"),
-    InlineKeyboardButton("🧐 Критик", callback_data="style:select:review"),
-    
-    # --- 🤪 Абсурдные и Необычные ---
-    InlineKeyboardButton("🤪 Абсурдный", callback_data="style:select:absurd"),
-    InlineKeyboardButton("🤯 Кризис", callback_data="style:select:crisis"),
-    InlineKeyboardButton("🐾 Кошка (Мяу!)", callback_data="style:select:cat"),
-    InlineKeyboardButton("🔄 Обратный порядок", callback_data="style:select:reverse"),
-    InlineKeyboardButton("🛑 Цифры", callback_data="style:select:numbers"),
-    InlineKeyboardButton("🍕 Рецепт", callback_data="style:select:pizza_recipe"),
-    InlineKeyboardButton("🥕 О моркови", callback_data="style:select:carrot"),
-    InlineKeyboardButton("🔥 Аллитерация", callback_data="style:select:allit"),
-    InlineKeyboardButton("❓ Вопросами", callback_data="style:select:questioner"),
-    
-    # --- 🧘 Эмоциональные и Нейтральные ---
-    InlineKeyboardButton("😎 Сленг (Chill)", callback_data="style:select:chill"),
-    InlineKeyboardButton("😴 Сонный", callback_data="style:select:sleepy"),
-    InlineKeyboardButton("🙄 Саркастичный", callback_data="style:select:sarcastic"),
-    InlineKeyboardButton("😇 Позитивный", callback_data="style:select:positive"),
-    InlineKeyboardButton("😔 Грустный", callback_data="style:select:sad"),
-    InlineKeyboardButton("🤫 Минималистичный", callback_data="style:select:minimal"),
-    
-    # --- 🗿 Мемы и Форматы ---
-    InlineKeyboardButton("🗿 Сигма", callback_data="style:select:sigma"),
-    InlineKeyboardButton("📈 Грайндсет", callback_data="style:select:grindset"),
-    InlineKeyboardButton("🗣️ Комментарий Reddit", callback_data="style:select:reddit"),
-    InlineKeyboardButton("💅 Инфлюенсер", callback_data="style:select:vibe_influencer"),
-    InlineKeyboardButton("🤯 Теория заговора", callback_data="style:select:conspiracy"),
-    
-    # --- 💻 Профессиональные и Ролевые (Узконаправленные) ---
-    InlineKeyboardButton("💻 Разработчик", callback_data="style:select:developer"),
-    InlineKeyboardButton("🤖 Супер-логичный ИИ", callback_data="style:select:super_ai"),
-    InlineKeyboardButton("🧘 Дзен", callback_data="style:select:zen"),
-    InlineKeyboardButton("📺 Реклама", callback_data="style:select:advert"),
-    
-    # --- 🧵 Формат и Структура (Уникальные) ---
-    InlineKeyboardButton("🧵 Twitter-тред", callback_data="style:select:twitter_thread"),
-    InlineKeyboardButton("🎤 Стендап", callback_data="style:select:standup"),
-    InlineKeyboardButton("❌ Отрицания", callback_data="style:select:negation"),
+    # --- 🛠 ИНСТРУМЕНТЫ МОЩНОСТИ (Core Efficiency) ---
+    InlineKeyboardButton("🔍 Суть (TL;DR)", callback_data="style:select:tldr"),             # Выжимка главного
+    InlineKeyboardButton("🎯 Точный и краткий", callback_data="style:select:concise"),      # Без лишних слов
+    InlineKeyboardButton("🧪 Глубокий анализ", callback_data="style:select:analytical"),    # Логика и детализация
+    InlineKeyboardButton("✍️ Редактор-корректор", callback_data="style:select:proofread"),   # Исправление ошибок и стиля
+    InlineKeyboardButton("👶 Объясни проще (ELI5)", callback_data="style:select:eli5"),      # Сложное простыми словами
+    InlineKeyboardButton("📝 По шагам (1. 2. 3.)", callback_data="style:select:steps"),     # Четкие алгоритмы действий
+
+    # --- 💼 КАРЬЕРА И БИЗНЕС (Professional Edge) ---
+    InlineKeyboardButton("💼 Executive (CEO)", callback_data="style:select:business"),      # Тон топ-менеджмента
+    InlineKeyboardButton("📧 Email-мастер", callback_data="style:select:email"),            # Идеальная переписка
+    InlineKeyboardButton("⚖️ Адвокат дьявола", callback_data="style:select:critic"),        # Критика и поиск дыр в идеях
+    InlineKeyboardButton("💰 Продажник (Pitch)", callback_data="style:select:sales"),       # Текст, который убеждает
+    InlineKeyboardButton("📊 Аналитик", callback_data="style:select:analyst"),              # Структура, таблицы, выводы
+    InlineKeyboardButton("👔 HR-интервьюер", callback_data="style:select:hr"),              # Режим подготовки к работе
+
+    # --- ⚡ СОВРЕМЕННЫЙ ВАЙБ (Modern & Meta) ---
+    InlineKeyboardButton("🗿 Сигма / База", callback_data="style:select:sigma"),            # Прямолинейно, уверенно, честно
+    InlineKeyboardButton("💅 Slay (Gen-Z)", callback_data="style:select:genz"),             # Тренды, сленг, энергия
+    InlineKeyboardButton("🔥 Прожарка (Roast)", callback_data="style:select:roast"),        # Острый юмор и критика
+    InlineKeyboardButton("🤫 Cyberpunk", callback_data="style:select:noir"),                # Атмосфера будущего и лаконичность
+    InlineKeyboardButton("🥦 Дзен (Mindful)", callback_data="style:select:zen"),            # Спокойствие и поддержка
+    InlineKeyboardButton("💡 Мозговой штурм", callback_data="style:select:creative"),      # Нестандартный креатив
+
+    # --- 🚀 КОНТЕНТ И ОБУЧЕНИЕ (Growth & Media) ---
+    InlineKeyboardButton("🎨 Промпт-инженер", callback_data="style:select:prompt"),          # Создание запросов для других ИИ
+    InlineKeyboardButton("🎞 Сценарист", callback_data="style:select:script"),              # Для Reels/Shorts/TikTok
+    InlineKeyboardButton("🧵 Тред-мейкер", callback_data="style:select:thread"),            # Формат X (Twitter) или цепочек
+    InlineKeyboardButton("🧱 Первоосновы", callback_data="style:select:first_principles"), # Глубокое понимание темы
+    InlineKeyboardButton("🎓 Сократ (Ментор)", callback_data="style:select:socratic"),      # Обучение через наводящие вопросы
+    InlineKeyboardButton("💻 Код-мастер", callback_data="style:select:dev"),                # Только чистый код и пояснения
 ]
 
 temperatures = [
@@ -185,7 +146,7 @@ data_items = {
     'temperature': temperatures, # Ваш существующий список
     'system_prompt': system_prompts, # Новый список
     'max_tokens': max_tokens, # Новый список
-    'language': languages # Новый список
+    'language': languages, # Новый список
 }
 
 

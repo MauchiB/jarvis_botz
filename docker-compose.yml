@@ -7,8 +7,6 @@ services:
       - postgres
       - redis
 
-    environment:
-      REDIS_URL: redis
 
     networks:
       - appnet

@@ -1,19 +1,41 @@
-from jarvis_botz.bot.database import get_user
-from jarvis_botz.config import config
+
+
 import os
 from functools import wraps
-from jarvis_botz.bot.database import User, get_user, add_user, _set_attr, get_chat_redis, create_chat_redis
-from typing import List, Tuple, Union
+from jarvis_botz.bot.db.schemas import User, Sub
+from jarvis_botz.bot.db.user_repo import RedisPersistence
+from typing import List, Tuple, Union, cast, Dict
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 import math
 from uuid import uuid4
 from telegram.ext import ContextTypes
 import time
-
-from jarvis_botz.ai.graph import graph
-
-
+from sqlalchemy import Boolean, String, Numeric, Integer
+from jarvis_botz.ai.llm import AIGraph
+from jarvis_botz.bot.contexttypes import CustomTypes
 from langchain_core.prompts import ChatPromptTemplate
+
+from datetime import datetime, timezone
+from jarvis_botz.bot.keyboard_format import PROMPT_CONFIGURATION
+
+
+
+def format_user_settings(user_data: dict, config_map: dict):
+    formatted_dict = {}
+    
+    for key, value in user_data.items():
+        if key in config_map:
+
+            display_value = config_map[key].get(value, value)
+            formatted_dict[key] = display_value
+
+        else:
+            formatted_dict[key] = value
+            
+    return formatted_dict
+        
+
+
 
 def create_grid_paged_menu(all_items: List[Union[Tuple[str, str], InlineKeyboardButton]],
                            prefix:str,
@@ -76,16 +98,18 @@ def create_grid_paged_menu(all_items: List[Union[Tuple[str, str], InlineKeyboard
 
 
 
-async def initialize_new_chat_session(update: Update, context: ContextTypes.DEFAULT_TYPE, 
+async def initialize_new_chat_session(model: AIGraph, update: Update, context: CustomTypes, 
                      question:str, answer:str, session_id:str) -> str:
-    
-    name = await graph.name_generation(question=question, answer=answer)
 
-    await create_chat_redis(prefix_metadata='user_chat_metadata', name=update.effective_user.id, key=session_id, metadata={
+    
+    name = await model.name_generation(question=question, answer=answer)
+
+    await context.chat_repo.create_chat(user_id=update.effective_user.id, session_key=session_id, metadata={
         'name': name,
         'session_id': session_id,
         'user_id': update.effective_user.id,
-        'created_at': int(time.time())})
+        'created_at': int(time.time()),
+        'num_messages':1})
 
     return session_id
     
@@ -93,39 +117,86 @@ async def initialize_new_chat_session(update: Update, context: ContextTypes.DEFA
 
 
 
+friendly_names = {
+        'style': '🎨 Стиль',
+        'temperature': '🔥 Температура',
+        'system_prompt': '📝 Промпт',
+        'max_tokens': '📊 Лимит токенов',
+        'language': '🌐 Язык',
+        'model': '🧠 Модель ИИ' # Пример на будущее
+    }
 
+def get_profile_text(user: User, ai_settings: dict) -> str:
 
-def get_attr_table(user: User) -> str:
-    info = ''
+    # 1. Блок основной информации (SQL)
+    role_emoji = f"👑" if user.role in ['admin', 'developer'] else "👤"
     
-    for column in user.__table__.columns:
-        value = getattr(user, column.name)
-        info += f'{column.name} - {value} \n'
+    text = (
+        "<b>📂 ВАШ ПАСПОРТ</b>\n"
+        f"<b>🆔 ID:</b> <code>{user.id}</code>\n"
+        f"<b>{role_emoji} Роль:</b> <code>{user.role.upper()}</code>\n"
+        f"<b>👤 Логин:</b> @{user.username or '—'}\n"
+        f"<b>🪙 Баланс:</b> <code>{user.tokens:.2f} токенов</code>\n"
+        f"<b>📅 В боте с:</b> <code>{user.created_at.strftime('%d.%m.%Y')}</code>\n"
+    )
 
+    # 2. Блок подписки (SQL Relationship)
+    text += "\n<b>💎 СТАТУС ПОДПИСКИ</b>\n"
+    
+    # Проверяем наличие активной подписки через relationship
+    if user.subsribers:
+        # Берем последнюю подписку (если их несколько)
+        sub = user.subsribers[-1]
+        now = datetime.now(timezone.utc)
+        
+        if sub.subscription_end_date > now:
+            days_left = (sub.subscription_end_date - now).days
+            text += f"<b>✅ Активна:</b> до <code>{sub.subscription_end_date.strftime('%d.%m.%Y')}</code>\n"
+            text += f"<b>⏳ Осталось:</b> <code>{days_left} дн.</code>\n"
+        else:
+            text += "<i>❌ Подписка истекла</i>\n"
+    else:
+        text += "<i>🆓 Бесплатный тариф</i>\n"
 
-    return info
+    # 3. Блок настроек ИИ (Redis)
+    text += "\n<b>🤖 НАСТРОЙКИ ИНТЕЛЛЕКТА</b>\n"
+    
+    if not ai_settings:
+        text += "<i>⚙️ Настройки еще не заданы</i>\n"
+    else:
+        # Используем твой маппинг friendly_names для ЗАГОЛОВКОВ
+        for key, value in ai_settings.items():
+            name = friendly_names.get(key, f"⚙️ {key.capitalize()}")
+            
+            display_value = str(value)
+            if len(display_value) > 30:
+                display_value = display_value[:27] + "..."
 
+            text += f"<b>{name}:</b> <code>{display_value}</code>\n"
 
+    return text
 
 
 def check_user(need_chat=False, ban_check=True):
     def decorator(func):
 
         @wraps(func)
-        async def wrapper(update, context):
-            user = await get_user(update.effective_user.id)
-            if not user:
-                user = await add_user(update.effective_user.id, update.effective_user.username)
-            
-            if ban_check:
-                if user.is_banned:
-                    await update.effective_message.reply_text('Ваш аккаунт заблокирован. Пожалуйста, свяжитесь с администратором для получения дополнительной информации.')
-                    return
-            
-            if need_chat:
-                if not context.user_data.get('current_chat_id', None):
-                    await update.effective_message.reply_text('У вас нет активного чата. Пожалуйста, выберите или создайте чат перед отправкой сообщений.')
-                    return
+        async def wrapper(update, context: CustomTypes):
+            async with context.session_factory() as session:
+                rep = context.user_repo(session=session)
+                user = await rep.get_user(update.effective_user.id)
+                if not user:
+                    user = await rep.add_user(update.effective_user.id, update.effective_user.username, update.effective_chat.id)
+                
+                if ban_check and user:
+                    if user.is_banned:
+                        await update.effective_message.reply_text('Ваш аккаунт заблокирован. Пока!')
+                        return
+                
+                if need_chat:
+                    if not context.user_data.get('current_chat_id', None):
+                        await update.effective_message.reply_text('У вас нет активного чата. Пожалуйста, выберите или создайте чат перед отправкой сообщений.')
+                        return
             
             
             return await func(update, context)
@@ -139,15 +210,17 @@ def control_tokens(required_tokens: float):
     def decorator(func):
 
         @wraps(func)
-        async def wrapper(update, context):
-            user = await get_user(update.effective_user.id)
-            if user.tokens < required_tokens:
-                await update.effective_message.reply_text('У вас недостаточно токенов для выполнения этого действия. Пожалуйста, пополните свой баланс токенов.')
-                return
-            
-            await _set_attr(id=update.effective_user.id, column='tokens', value=user.tokens - required_tokens)
+        async def wrapper(update, context: CustomTypes):
+            async with context.session_factory() as session:
+                rep = context.user_repo(session=session)
+                user = await rep.get_user(update.effective_user.id)
+                if user.tokens < required_tokens:
+                    await update.effective_message.reply_text('У вас недостаточно токенов для выполнения этого действия. Пожалуйста, пополните свой баланс токенов.')
+                    return
+                token_after = user.tokens - required_tokens
+                await rep._set_attr(id=update.effective_user.id, update_data={'tokens':token_after})
 
-            return await func(update, context)
+                return await func(update, context)
         
         return wrapper
     
@@ -159,15 +232,64 @@ def control_tokens(required_tokens: float):
 def required_permission(roles, need_alert=True):
     def decorator(func):
         @wraps(func)
-        async def wrapper(update, context):
-            user = await get_user(update.effective_user.id)
-            if user.role in roles:
-                return await func(update, context)
-            
-            if need_alert:
-                await update.effective_message.reply_text('У вас нет доступа к этой команде.')
-            return
+        async def wrapper(update, context: CustomTypes):
+            async with context.session_factory() as session:
+                rep = context.user_repo(session=session)
+                user = await rep.get_user(update.effective_user.id)
+                print(f'{user.role} in {roles}')
+                if user.role in roles:
+                    return await func(update, context)
+                
+                if need_alert:
+                    await update.effective_message.reply_text('У вас нет доступа к этой команде.')
+                return
             
         return wrapper
 
     return decorator
+
+
+
+
+
+
+
+async def set_type(column_name: str, input_value: str):
+    try:
+        column = getattr(User, column_name)
+    except AttributeError:
+        raise ValueError(f"Column: {column_name} don`t found")
+        
+    column_type = column.type
+    lower_value = input_value.lower()
+
+
+    if isinstance(column_type, Boolean):
+        lower_value = input_value.lower()
+        if lower_value in ['true', '1']:
+            return True
+        elif lower_value in ['false', '0']:
+            return False
+        else:
+            raise ValueError(f"{input_value} - need to be bool object (true or 1 / false or 0)")
+
+    elif isinstance(column_type, Integer):
+        try:
+            return int(input_value)
+        except ValueError:
+            raise ValueError(f"{input_value} - need to be int object (any number)")
+
+
+    elif isinstance(column_type, Numeric):
+        try:
+            return float(input_value)
+        except ValueError:
+            raise ValueError(f"{input_value} - need to be numeric object like (float)")
+
+
+    elif isinstance(column_type, String):
+        try:
+            return str(input_value)
+        except ValueError:
+            raise ValueError(f"{input_value} - need to be str object (any text)")
+    

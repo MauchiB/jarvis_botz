@@ -4,10 +4,10 @@ from jarvis_botz.utils import create_grid_paged_menu
 import os
 from typing import List, Tuple
 
-from jarvis_botz.bot.database import get_redis_client, get_chat_redis, create_chat_redis, delete_chat_redis, get_all_chats_redis
-from jarvis_botz.utils import required_permission, check_user, control_tokens, get_attr_table
+from jarvis_botz.utils import required_permission, check_user, control_tokens
 from uuid import uuid4
 import time
+from jarvis_botz.bot.contexttypes import CustomTypes
 
 
 state_chat_name = 5
@@ -16,7 +16,7 @@ state_chat_name = 5
 
 def chat_create_button_action(session_id:str) -> List[InlineKeyboardButton]:
     chat_inline = [
-    # Ряд 1: Основные действия (Удалить и Выбрать)
+
     [
         InlineKeyboardButton("🗑️ Удалить чат", callback_data=f'chat:delete_final:{session_id}'),
         InlineKeyboardButton("✅ Выбрать Чат", callback_data=f'chat:select_final:{session_id}')
@@ -31,17 +31,37 @@ def chat_create_button_action(session_id:str) -> List[InlineKeyboardButton]:
 
 
 @check_user()
-async def create_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def create_chat(update: Update, context: CustomTypes):
+
+    if not context.user_data.get('num_chats') and not context.user_data.get('allowed_num_chats'):
+        context.user_data['num_chats'] = 0
+        context.user_data['allowed_num_chats'] = 10
+
+    if context.user_data.get('num_chats') == context.user_data.get('allowed_num_chats'):
+        await update.effective_message.reply_text(f'Вы не можете создать больше чем {context.user_data.get('allowed_num_chats')} чатов')
+        return
+    
+        
     context.user_data['current_chat_id'] = str(uuid4())
     context.user_data['creating_chat'] = True
     await update.message.reply_text("Чат будет создан при первом вашем сообщении в этом чате. (Название чата будет сгенерировано автоматически)")
 
 
-@check_user()
-async def chat_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    callback = update.callback_query
 
-    chat_data = await get_all_chats_redis(prefix_metadata='user_chat_metadata', name=update.effective_user.id)
+@check_user()
+async def chat_list(update: Update, context: CustomTypes):
+    callback = update.callback_query
+    page = 0
+
+    if callback:
+        prefix, action, page = callback.data.split(':')
+        if not page.isdigit():
+            page = 0
+
+
+    chat_repo = context.chat_repo
+
+    chat_data = await chat_repo.get_all_chats(user_id=update.effective_user.id)
 
     if not chat_data:
         if callback:
@@ -58,37 +78,42 @@ async def chat_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         buttons_data.append( (chat['name'], chat['session_id']) )
     
     
-    chat_list = create_grid_paged_menu(all_items=buttons_data, prefix='chat', action='select_action', page=0, col=1, row=5, quit_button='_quit_delete')
+    chat_list = create_grid_paged_menu(all_items=buttons_data, prefix='chat', action='select_action', page=int(page), col=1, row=5, quit_button='_quit_delete')
     
     if callback:
         await callback.answer()
         await update.effective_message.edit_text(
-            "Управление вашими чатами:",
+            f"Управление вашими чатами({context.user_data.get('num_chats')}):",
             reply_markup=chat_list
         )
     else:
         await update.message.reply_text(
-            "Управление вашими чатами:",
+            f"Управление вашими чатами({context.user_data.get('num_chats')}):",
             reply_markup=chat_list
         )
 
 
 
 @check_user()
-async def chat_select(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def chat_select(update: Update, context: CustomTypes):
     callback = update.callback_query
     args = callback.data.split(':')
     prefix, action, value = args[0], args[1], args[2]
 
-    print(prefix, action, value)
+    chat_repo = context.chat_repo
 
     if action == 'select_final':
         context.user_data['current_chat_id'] = value
         await update.effective_message.delete()
 
     elif action == 'delete_final':
-        context.user_data['current_chat_id'] = None
-        await delete_chat_redis(prefix_history='user_chat_history', prefix_metadata='user_chat_metadata', user_id=update.effective_user.id, session_id=value)
+
+        if context.user_data.get('current_chat_id') == value:
+            context.user_data['current_chat_id'] = None
+
+        await chat_repo.delete_chat(user_id=update.effective_user.id, session_id=value)
+        
+        context.user_data['num_chats'] -= 1
         await chat_list(update, context)
 
 
