@@ -4,15 +4,17 @@ from jarvis_botz.config import Config
 from langchain_community.chat_message_histories import ChatMessageHistory, RedisChatMessageHistory
 from langchain_core.runnables import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain.agents import create_agent
+from langchain.chat_models import init_chat_model
 
 from langchain.tools import tool
 
 from langgraph.prebuilt import create_react_agent
 
 import os
+from langchain_core.messages import BaseMessage
 
 import logging
+from typing import List, Dict
 import redis
 
 from telegram import Update
@@ -23,15 +25,19 @@ from langgraph.checkpoint.redis.aio import AsyncRedisSaver
 from langchain_core.messages import SystemMessage
 
 from jarvis_botz.ai.agent_tools import tools
-
+from langchain.agents import create_agent
 
 from langchain.agents.middleware import dynamic_prompt, ModelRequest
 
-logger = logging.getLogger(__name__)
+from jarvis_botz.ai.prompts import get_gpt_system_prompt, get_name_generation_prompt
+
+from langchain_community.chat_models.yandex import ChatYandexGPT
+from langchain_community.embeddings.yandex import YandexGPTEmbeddings
+
 from typing import TypedDict
 
 
-
+import asyncio
 
 class PromptContext(TypedDict):
     system_prompt: str
@@ -40,44 +46,38 @@ class PromptContext(TypedDict):
     max_tokens_limit: int
 
 
-def get_template():
-    template = ChatPromptTemplate.from_template(
-        "You are Jarvis Botz, the smartest AI assistant designed by Machi to execute tasks precisely.\n\n"
-        "**CONFIGURATION & INSTRUCTIONS:**\n"
-        "1. **PRIMARY ROLE:** You must strictly act as a **{system_prompt}**.\n"
-        "2. **STYLE/TONE:** Format your entire response strictly following the chosen style: **{style}**.\n"
-        "3. **RESPONSE LENGTH:** Your answer **must strictly not exceed** {max_tokens_limit} tokens.\n"
-        "4. **LANGUAGE:** Your entire output must be written exclusively in **{language}**.\n\n"
-
-        "Strictly avoid using LaTeX symbols or formatting (like $$, \frac, \times). Use only plain text and standard Markdown for math (e.g., use '*' for multiplication, '/' for division). Render numbers and units simply (e.g., 0.04 SOL)."
-        
-        "**AGENT CAPABILITIES:**\n"
-        "- You have access to external tools and functions. Use them whenever you need up-to-date information or to perform specific tasks.\n"
-        "- If the user's request requires a tool, call it immediately. Once you get the result, synthesize the final answer.\n"
-        "- Even when using tools, you MUST maintain the role and style defined above.\n\n"
-        
-        "**TASK:** Following all the rules and constraints listed above, respond to the user's request, referencing the chat history where necessary.")
-
-    return template
-
 
 
 @dynamic_prompt
 def llm_dynamic_prompt(request: ModelRequest):
-    ctx: PromptContext = request.runtime.context
-    prompt = get_template().format(**ctx)
-    return prompt
+    ctx: PromptContext = request.runtime.context['context']
+    prompt = get_gpt_system_prompt().format(**ctx)
+    return SystemMessage(prompt)
+
+'''
+def get_model_with_dynamic_prompt(state, config):
+
+    ctx = config["configurable"].get("context", {})
+
+    template = get_gpt_system_prompt()
+    formatted_prompt = template.format(**ctx)
+
+    return [SystemMessage(content=formatted_prompt)] + state["messages"]
+'''
 
 
 
 
 
 class AIGraph:
-    def __init__(self, checkpointer, cfg: Config):
+    def __init__(self, checkpointer: AsyncRedisSaver, cfg: Config):
         self.cfg = cfg
         self.checkpointer = checkpointer
-        self.model, self.agent = self._setup()
 
+        self.model = self._setup_model() 
+        self.agent = self._setup_agent() 
+
+        
 
     @classmethod
     async def create(cls, cfg: Config):
@@ -89,43 +89,23 @@ class AIGraph:
         return cls(checkpointer=checkpointer, cfg=cfg)
 
 
-    def _setup(self):
-        access_token = self.get_access_token()
-        model = GigaChat(model="GigaChat", temperature=0.7,
-                  access_token=access_token,
-                  verify_ssl_certs=False,
-                  )
-        
-        agent = create_react_agent(model=model, tools=tools, checkpointer=self.checkpointer, context_schema=PromptContext)
-        
-        '''agent = create_agent(model=model,
+    def _setup_model(self):
+        model = init_chat_model(configurable_fields=('model', 'model_provider', 'temperature'),
+                                api_key='',
+                                base_url= '', streaming=True)
+        return model
+
+    def _setup_agent(self):
+        agent = create_agent(model=self.model,
                              context_schema=PromptContext,
                              middleware=[llm_dynamic_prompt],
                              tools=tools,
-                             checkpointer=self.checkpointer)'''
+                             checkpointer=self.checkpointer)
 
-        return model, agent
+        return agent
 
-
-
-    def get_access_token(self):
-        url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
-
-        payload={
-        'scope': 'GIGACHAT_API_PERS'
-        }
-
-        headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'RqUID': 'eb6b21c5-eb17-430c-9e56-ce024f69ca93',
-        'Authorization': f'Basic {self.cfg.base_api_key}'
-        }
-
-        response = requests.request("POST", url, headers=headers, data=payload, verify=False)
-        access_token = response.json().get("access_token")
-        return access_token
     
+
 
     async def text_generation(self, msg, llm_context:PromptContext,
                                input: dict, config: dict = None,
@@ -149,21 +129,15 @@ class AIGraph:
             collected_text = ''
 
 
-            async for out in self.agent.astream(
+            async for event in self.agent.astream(
                 input=input,
                 config=config,
-                context=llm_context
+                context=llm_context,
                 ):
 
-                target_key = next((k for k in ['agent', 'model'] if k in out), None)
-
-                if 'tools' in out:
-                    print('TOOL')
-
-                if target_key:
-                    # Если ключ найден, берем из него последнее сообщение
-                    out = out[target_key]['messages'][-1]
-
+                out = event['model'].get('messages', [])
+                if out:
+                    out = out[0]
                     collected_text += out.content
 
                     if len(collected_text) > len(last_sent_text): 
@@ -172,25 +146,21 @@ class AIGraph:
                             last_sent_text = collected_text
                         except Exception as e:
                             pass
+
             
             return collected_text
 
 
-    async def name_generation(self, question:str, answer:str) -> str:
-        messages = ChatPromptTemplate.from_messages([
-    (
-        "system",
-
-        "You are a helpful assistant that generates short and relevant chat names based on the conversation between the user and the AI. "
-        "The generated name **MUST be in the same language** as the provided User and AI text. " 
-        "Provide a concise name that captures the essence of the discussion in **NO MORE THAN 5 WORDS**. "
-        "The output must contain ONLY the generated title, with absolutely no quotes, introductions, or extra commentary."
-    ),
-    (
-        "user",
-        f"Based on the following interaction, suggest a short and relevant name for the chat:\n\nUser: {question}\nAI: {answer}\n\nChat Name:"
-    ),
-    ])
-
-        response = await self.model.ainvoke(input=messages.format_messages())
+    async def custom_generation(self, prompt_func: ChatPromptTemplate, **kwargs) -> str:
+        prompt = prompt_func(**kwargs)
+        response = await self.model.ainvoke(input=prompt.format_messages())
         return response.content.strip()
+    
+
+    async def delete_chat(self, session_id) -> None:
+        await self.checkpointer.adelete_thread(thread_id=session_id)
+
+
+    async def get_history(self, session_id) -> List[BaseMessage]:
+        data = await self.checkpointer.aget_tuple(config={'configurable': {'thread_id': session_id}})
+        return data.checkpoint['channel_values'].get('messages', [])

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Jarvis Botz Web</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+
+        body {
+            background-color: var(--tg-theme-bg-color, #f0f2f5);
+            color: var(--tg-theme-text-color, #222);
+            overflow-x: hidden;
+        }
+                
+        .chat-card {
+            background-color: var(--tg-theme-secondary-bg-color, #ffffff);
+            transition: all 0.2s;
+        }
+        .chat-card:active {
+            background-color: var(--tg-theme-hint-color, #e5e7eb);
+            transform: scale(0.98);
+        }
+        .accent-text { color: var(--tg-theme-button-color, #3390ec); }
+        .hint-text { color: var(--tg-theme-hint-color, #8e8e93); }
+        .badge { background-color: var(--tg-theme-button-color, #3390ec); color: var(--tg-theme-button-text-color, #fff); }
+
+        /* Стили сообщений */
+        .message { padding: 10px 14px; border-radius: 18px; font-size: 15px; line-height: 1.4; max-width: 85%; }
+        .user-msg { background-color: var(--tg-theme-button-color, #3390ec); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .ai-msg { background-color: var(--tg-theme-secondary-bg-color, #fff); border: 1px solid #e5e7eb; align-self: flex-start; border-bottom-left-radius: 4px; }
+
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="p-4 font-sans antialiased">
+
+    <div id="view-list">
+        <header class="mb-6 flex items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold">Чаты</h1>
+                <p class="hint-text text-sm">Твои ИИ-ассистенты</p>
+            </div>
+            <div id="avatar" class="w-12 h-12 rounded-full border-2 border-blue-500 overflow-hidden bg-gray-200">
+                <img id="user-photo" src="https://ui-avatars.com/api/?name=User" alt="Avatar">
+            </div>
+        </header>
+
+        <div id="chat-list" class="space-y-3 pb-20">
+            </div>
+
+        <div id="empty-state" class="hidden text-center py-20">
+            <p class="hint-text">У тебя пока нет активных чатов</p>
+        </div>
+    </div>
+
+    <div id="view-detail" class="hidden">
+        <header class="mb-4 flex items-center gap-4">
+            <button onclick="backToList()" class="p-2 -ml-2 accent-text text-xl">←</button>
+            <h2 id="current-chat-name" class="font-bold truncate text-lg">История чата</h2>
+        </header>
+        
+        <div id="messages-container" class="flex flex-col gap-3 pb-32">
+            </div>
+
+        <div class="fixed bottom-0 left-0 right-0 p-4 bg-white/80 backdrop-blur-md border-t border-gray-100 flex gap-3">
+            <button onclick="confirmSelect()" class="flex-1 bg-blue-500 text-white py-4 rounded-2xl font-bold active:scale-95 transition-transform shadow-lg shadow-blue-200">
+                Выбрать этот чат
+            </button>
+            <button onclick="deleteChat()" class="w-14 h-14 bg-red-50 flex items-center justify-center rounded-2xl active:scale-95 transition-transform text-red-500 border border-red-100">
+                🗑️
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const API_BASE = "https://w6949pzb-8000.euw.devtunnels.ms/api/v1";
+        let currentSessionId = null;
+
+        // --- ЛОГИКА СПИСКА ---
+
+        async function loadChats() {
+            const container = document.getElementById('chat-list');
+            container.innerHTML = '<p class="text-center hint-text py-10">Загрузка...</p>';
+
+            try {
+                const res = await fetch(`${API_BASE}/chats`, {
+                    headers: { "Authorization": `tma ${tg.initData}` }
+                });
+                const data = await res.json();
+                const chats = data.chats || [];
+
+                if (chats.length === 0) {
+                    document.getElementById('empty-state').classList.remove('hidden');
+                    container.innerHTML = '';
+                } else {
+                    document.getElementById('empty-state').classList.add('hidden');
+                    renderChats(chats);
+                }
+            } catch (err) {
+                container.innerHTML = `<p class="text-center text-red-500 py-10">Ошибка загрузки</p>`;
+            }
+        }
+
+        function renderChats(chats) {
+            const container = document.getElementById('chat-list');
+            container.innerHTML = '';
+            chats.forEach(chat => {
+                const card = document.createElement('div');
+                card.className = 'chat-card flex items-center p-4 rounded-2xl shadow-sm cursor-pointer';
+                card.onclick = () => openChatDetail(chat.id, chat.name);
+                card.innerHTML = `
+                    <div class="text-3xl mr-4 bg-gray-50 w-12 h-12 flex items-center justify-center rounded-xl">${chat.icon || '🤖'}</div>
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between items-center mb-0.5">
+                            <h3 class="font-bold truncate text-[15px]">${chat.name}</h3>
+                            <span class="hint-text text-[11px]">${chat.time}</span>
+                        </div>
+                        <p class="hint-text text-[13px] truncate">${chat.lastMsg}</p>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // --- ЛОГИКА ДЕТАЛЕЙ (ИСТОРИИ) ---
+
+        async function openChatDetail(id, name) {
+            tg.HapticFeedback.impactOccurred('medium');
+            currentSessionId = id;
+            document.getElementById('current-chat-name').innerText = name;
+            
+            document.getElementById('view-list').classList.add('hidden');
+            document.getElementById('view-detail').classList.remove('hidden');
+            
+            await loadMessages(id);
+        }
+
+        async function loadMessages(id) {
+            const container = document.getElementById('messages-container');
+            container.innerHTML = '<p class="text-center hint-text py-10">Загрузка сообщений...</p>';
+
+            try {
+                // ВАЖНО: Тебе нужно создать этот эндпоинт на FastAPI!
+                const res = await fetch(`${API_BASE}/chats/${id}/messages`, {
+                    headers: { "Authorization": `tma ${tg.initData}` }
+                });
+                const messages = await res.json();
+
+                container.innerHTML = '';
+                messages.forEach(msg => {
+                    const el = document.createElement('div');
+                    const isAi = msg.role === 'assistant' || msg.role === 'ai';
+                    el.className = `message ${isAi ? 'ai-msg' : 'user-msg'}`;
+                    el.innerText = msg.content || msg.text;
+                    container.appendChild(el);
+                });
+                window.scrollTo(0, document.body.scrollHeight);
+            } catch (e) {
+                container.innerHTML = '<p class="text-center text-red-500 py-10">История пуста или недоступна</p>';
+            }
+        }
+
+        function backToList() {
+            document.getElementById('view-detail').classList.add('hidden');
+            document.getElementById('view-list').classList.remove('hidden');
+            loadChats(); // Обновляем список на случай изменений
+        }
+
+        // --- ДЕЙСТВИЯ ---
+
+        function confirmSelect() {
+            tg.HapticFeedback.notificationOccurred('success');
+            fetch(`${API_BASE}/select-chat`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ 
+                    session_id: currentSessionId, 
+                    user_id: tg.initDataUnsafe.user.id 
+                })
+            }).then(() => tg.close());
+        }
+
+        function deleteChat() {
+    // 1. Достаем ID пользователя из SDK Telegram
+    const userId = tg.initDataUnsafe?.user?.id;
+
+    if (!userId) {
+        tg.showAlert("Ошибка: не удалось определить ID пользователя");
+        return;
+    }
+
+    tg.showConfirm("Удалить этот чат безвозвратно?", (ok) => {
+        if (ok) {
+            tg.HapticFeedback.notificationOccurred('warning');
+
+            // 2. Добавляем ?user_id=... в конец URL
+            fetch(`${API_BASE}/chats/${currentSessionId}?user_id=${userId}`, { 
+                method: 'DELETE',
+                headers: { 
+                    "Authorization": `tma ${tg.initData}` 
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                    backToList(); // Возвращаемся к списку после удаления
+                } else {
+                    tg.showAlert("Ошибка при удалении чата на сервере");
+                }
+            })
+            .catch(error => {
+                console.error("Fetch error:", error);
+                tg.showAlert("Произошла ошибка сети");
+            });
+        }
+    });
+}
+
+        // Инициализация фото и старт
+        if (tg.initDataUnsafe.user) {
+            const u = tg.initDataUnsafe.user;
+            document.getElementById('user-photo').src = u.photo_url || `https://ui-avatars.com/api/?name=${u.first_name}`;
+        }
+        loadChats();
+    </script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 from langchain.agents import create_agent
 from langchain.tools import tool
 from langchain_community.tools.tavily_search import TavilySearchResults
-from langchain_community.tools import OpenWeatherMapQueryRun, WikipediaQueryRun
+from langchain_community.tools import OpenWeatherMapQueryRun, WikipediaQueryRun, AskNewsSearch
 
 from langchain_community.utilities import WikipediaAPIWrapper
 from langchain_community.document_loaders import WebBaseLoader, YoutubeLoader
@@ -13,7 +13,7 @@ from datetime import datetime
 from langchain_experimental.utilities import PythonREPL
 
 from youtube_transcript_api import YouTubeTranscriptApi
-
+from langchain_community.document_loaders.image import UnstructuredImageLoader
 dotenv.load_dotenv()
 
 @tool
@@ -23,7 +23,6 @@ def get_current_time() -> str:
     Use this tool when the user asks about the current time, today's date, 
     or what day it is.
     """
-
 
     now = datetime.now()
     return now.strftime("%A, %d %B %Y, %H:%M:%S")
@@ -62,7 +61,6 @@ def summarize_youtube_video(url: str) -> str:
     try:
         loader = YoutubeLoader.from_youtube_url(url, language=['en', 'ru'])
         docs = loader.load()
-        print(docs)
         return docs[0].page_content[:1500] # Возвращаем текст для анализа нейросетью
     except Exception as e:
         tb = traceback.format_exc()
@@ -110,7 +108,7 @@ def search_in_documents(query: str) -> str:
 
 repl = PythonREPL()
 
-
+'''
 @tool
 def python_calculator(code: str) -> str:
     """
@@ -132,6 +130,7 @@ def python_calculator(code: str) -> str:
         # Возвращаем саму ошибку кода, чтобы ИИ мог её исправить
         return f"Code error: {str(e)}"
 
+'''
 os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY')
 tavily = TavilySearchResults(max_results=2, search_depth='basic')
 
@@ -139,9 +138,7 @@ wiki_wrap = WikipediaAPIWrapper(top_k_results=2, doc_content_chars_max=500, lang
 wiki = WikipediaQueryRun(api_wrapper=wiki_wrap)
 
 
-tools = [tavily, wiki, get_current_time, fetch_webpage_content, summarize_youtube_video, get_crypto_price, python_calculator]
+tools = [tavily, wiki, get_current_time, fetch_webpage_content, summarize_youtube_video, get_crypto_price]
 
     
 
-
-            

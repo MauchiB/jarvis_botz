@@ -8,11 +8,14 @@ from sqlalchemy import Integer,Boolean, String, Numeric
 from jarvis_botz.bot.db.user_repo import UserRepository
 from jarvis_botz.utils import required_permission, check_user, set_type
 from jarvis_botz.bot.db.user_repo import User
-from jarvis_botz.bot.log_bot import logger
 from jarvis_botz.bot.contexttypes import CustomTypes
 
 import traceback
 
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 @check_user()
 @required_permission(['developer'], need_alert=True)
@@ -70,15 +73,15 @@ async def dev_command(update: Update, context: CustomTypes):
     
 
 
-
-@check_user()
-@required_permission(['developer'], need_alert=False)
+#
+#@check_user()
+#@required_permission(['developer'], need_alert=False)
 async def error_handler(update: Update, context: CustomTypes):
     logger.error('Something goes wrong...', context.error, exc_info=True)
     tb_list = traceback.format_exception(None, context.error, context.error.__traceback__)
     tb_string = ''.join(tb_list)
 
-    async with context.bot_data['session_factory']() as session:
+    async with context.session_factory() as session:
         rep = UserRepository(session=session)
         users = await rep.get_users_by_role(role='developer')
         if users:

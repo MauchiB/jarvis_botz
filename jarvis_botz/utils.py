@@ -1,5 +1,3 @@
-
-
 import os
 from functools import wraps
 from jarvis_botz.bot.db.schemas import User, Sub
@@ -17,6 +15,9 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from datetime import datetime, timezone
 from jarvis_botz.bot.keyboard_format import PROMPT_CONFIGURATION
+
+
+from jarvis_botz.ai.prompts import get_job_system_prompt, get_name_generation_prompt
 
 
 
@@ -98,20 +99,35 @@ def create_grid_paged_menu(all_items: List[Union[Tuple[str, str], InlineKeyboard
 
 
 
-async def initialize_new_chat_session(model: AIGraph, update: Update, context: CustomTypes, 
-                     question:str, answer:str, session_id:str) -> str:
+async def initialize_new_chat_session(update: Update, context: CustomTypes, 
+                     query:str, answer:str, session_id:str) -> str:
 
-    
-    name = await model.name_generation(question=question, answer=answer)
+    name = await context.llm.custom_generation(prompt_func=get_name_generation_prompt, 
+                                               query=query, 
+                                               answer=answer)
 
-    await context.chat_repo.create_chat(user_id=update.effective_user.id, session_key=session_id, metadata={
+    await context.chat_repo.update_chat_metadata(user_id=update.effective_user.id, session_key=session_id, metadata={
         'name': name,
         'session_id': session_id,
         'user_id': update.effective_user.id,
         'created_at': int(time.time()),
+        'last_interaction': int(time.time()),
+        'ai_settings': context.user_data.get('ai_settings', {}),
+        'last_query': query,
+        'last_answer': answer,
         'num_messages':1})
 
     return session_id
+
+
+async def get_job_text(context: CustomTypes, query:str, answer:str) -> str:
+    response = await context.llm.custom_generation(
+                                                   prompt_func=get_job_system_prompt,
+                                                   query=query, 
+                                                   answer=answer
+                                                   )
+    
+    return response
     
 
 
@@ -127,9 +143,8 @@ friendly_names = {
     }
 
 def get_profile_text(user: User, ai_settings: dict) -> str:
-
     # 1. Блок основной информации (SQL)
-    role_emoji = f"👑" if user.role in ['admin', 'developer'] else "👤"
+    role_emoji = "👑" if user.role in ['admin', 'developer'] else "👤"
     
     text = (
         "<b>📂 ВАШ ПАСПОРТ</b>\n"
@@ -140,13 +155,29 @@ def get_profile_text(user: User, ai_settings: dict) -> str:
         f"<b>📅 В боте с:</b> <code>{user.created_at.strftime('%d.%m.%Y')}</code>\n"
     )
 
-    # 2. Блок подписки (SQL Relationship)
+    # 2. Блок Реферальной системы (SQL Relationships)
+    text += "\n<b>👥 РЕФЕРАЛЬНАЯ ПРОГРАММА</b>\n"
+    
+    # Считаем количество приглашенных через list len (если рефералы загружены)
+    # Или через count в репозитории (что эффективнее для больших данных)
+    ref_count = len(user.referrals)
+    text += f"<b>📈 Приглашено:</b> <code>{ref_count} чел.</code>\n"
+    
+    # Показываем, кто пригласил (если есть)
+    if user.referral:
+        # Пытаемся взять юзернейм пригласителя, если он подгружен
+        ref_by = f"@{user.referral.username}" if user.referral.username else f"<code>{user.referral_id}</code>"
+        text += f"<b>🤝 Вас пригласил:</b> {ref_by}\n"
+    elif user.referral_id:
+        # Если объект referrer не подгружен (lazy load), пишем просто ID
+        text += f"<b>🤝 Вас пригласил:</b> <code>{user.referral_id}</code>\n"
+
+    # 3. Блок подписки (SQL Relationship)
     text += "\n<b>💎 СТАТУС ПОДПИСКИ</b>\n"
     
-    # Проверяем наличие активной подписки через relationship
-    if user.subsribers:
-        # Берем последнюю подписку (если их несколько)
-        sub = user.subsribers[-1]
+    if user.subscribers:
+        # Берем последнюю подписку
+        sub = user.subscribers[-1]
         now = datetime.now(timezone.utc)
         
         if sub.subscription_end_date > now:
@@ -158,46 +189,60 @@ def get_profile_text(user: User, ai_settings: dict) -> str:
     else:
         text += "<i>🆓 Бесплатный тариф</i>\n"
 
-    # 3. Блок настроек ИИ (Redis)
+    # 4. Блок настроек ИИ (Redis)
     text += "\n<b>🤖 НАСТРОЙКИ ИНТЕЛЛЕКТА</b>\n"
     
     if not ai_settings:
         text += "<i>⚙️ Настройки еще не заданы</i>\n"
     else:
-        # Используем твой маппинг friendly_names для ЗАГОЛОВКОВ
         for key, value in ai_settings.items():
             name = friendly_names.get(key, f"⚙️ {key.capitalize()}")
-            
             display_value = str(value)
             if len(display_value) > 30:
                 display_value = display_value[:27] + "..."
-
             text += f"<b>{name}:</b> <code>{display_value}</code>\n"
 
     return text
 
 
-def check_user(need_chat=False, ban_check=True):
+def check_user(need_chat=False, ban_check=True, add_ref=False):
     def decorator(func):
 
         @wraps(func)
-        async def wrapper(update, context: CustomTypes):
+        async def wrapper(update: Update, context: CustomTypes):
             async with context.session_factory() as session:
                 rep = context.user_repo(session=session)
                 user = await rep.get_user(update.effective_user.id)
-                if not user:
-                    user = await rep.add_user(update.effective_user.id, update.effective_user.username, update.effective_chat.id)
                 
+                if not user:
+                    user = await rep.add_user(id=update.effective_user.id, 
+                                       username=update.effective_user.username, 
+                                       chat_id=update.effective_chat.id)
+                    
+
+                    context.user_data['ai_settings'] = {}
+                    if add_ref:
+                        if context.args:
+                            try:
+                                ref_user_id = int(context.args[0])
+                            except:
+                                print(f'ID {ref_user_id} is {type(ref_user_id)}')
+
+                            await rep.update_ref_user(user_id=user.id, ref_user_id=ref_user_id)
+                                
+                        await session.commit()
+                    
                 if ban_check and user:
                     if user.is_banned:
                         await update.effective_message.reply_text('Ваш аккаунт заблокирован. Пока!')
                         return
                 
                 if need_chat:
-                    if not context.user_data.get('current_chat_id', None):
+                    if not context.user_data.get('session_id', None):
                         await update.effective_message.reply_text('У вас нет активного чата. Пожалуйста, выберите или создайте чат перед отправкой сообщений.')
                         return
-            
+
+                    
             
             return await func(update, context)
         
@@ -236,7 +281,6 @@ def required_permission(roles, need_alert=True):
             async with context.session_factory() as session:
                 rep = context.user_repo(session=session)
                 user = await rep.get_user(update.effective_user.id)
-                print(f'{user.role} in {roles}')
                 if user.role in roles:
                     return await func(update, context)
                 

@@ -7,6 +7,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 import os
 from datetime import datetime, timezone
 
+from typing import Optional, List
+
 
 def get_db_engine(cfg):
     engine = create_async_engine(
@@ -44,7 +46,20 @@ class User(Base):
     last_active_at: Mapped[datetime] = mapped_column(DateTime(True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
 
-    subsribers = relationship("Sub", back_populates="user")
+    subscribers = relationship("Sub", back_populates="user")
+
+    referral_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey('users.id'))
+
+    referral: Mapped[Optional["User"]] = relationship(
+        'User', 
+        remote_side=[id], 
+        back_populates='referrals'
+    )
+
+    referrals: Mapped[List["User"]] = relationship(
+        'User', 
+        back_populates='referral'
+    )
 
 
 
@@ -59,4 +74,4 @@ class Sub(Base):
     subscription_end_date: Mapped[datetime] = mapped_column(DateTime(True))
     tokens_purchased: Mapped[float] = mapped_column(Float, default=0)
 
-    user = relationship("User", back_populates="subsribers")
+    user = relationship("User", back_populates="subscribers")

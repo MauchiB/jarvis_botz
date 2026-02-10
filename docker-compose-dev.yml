@@ -6,6 +6,9 @@ services:
 
     ports:
       - "6379:6379"
+
+    volumes:
+      - redis-data:/data
   
     networks:
       - appnet
@@ -26,7 +29,12 @@ services:
       - appnet
 
 
+
+
 networks:
   appnet: {}
+
+volumes:
+  redis-data:
 
 

@@ -46,7 +46,7 @@ class Config:
     redis_port: str
 
     redis_url: Optional[str]
-    redis_url: Optional[str]
+    redis_ttl: Optional[str]
     
 
     redis_history_prefix: Final[str]
@@ -54,8 +54,13 @@ class Config:
 
 
     def __init__(self, 
-                 telegram_token: str,
+                 token: str,
                  stage: str,
+
+                 webhook_path:Optional[str] = None,
+                 webhook:Optional[str] = None,
+
+                 webapp_url:Optional[str] = None,
 
                  postgres_user: Optional[str] = None,
                  postgres_password: Optional[str] = None,
@@ -64,14 +69,23 @@ class Config:
                  postgres_port: Optional[str] = None,
                  postgres_url: Optional[str] = None,
 
+                 redis_history_prefix: Optional[str] = 'history',
+                 redis_metadata_prefix: Optional[str] = 'metadata',
+                 redis_conv_prefix: Optional[str] = 'conv',
+                 redis_user_prefix: Optional[str] = 'user',
+                 redis_bot_prefix: Optional[str] = 'bot',
+                 redis_chat_prefix: Optional[str] = 'chat',
+
                  redis_host: Optional[str] = None,
                  redis_port: Optional[str] = None,
                  # Остальные параметры
                  redis_url: Optional[str] = None,
                  redis_ttl: Optional[str] = None,
 
-                 base_api_key: Optional[str] = None,
-                 access_token: Optional[str] = None):
+                 ai_api_key: Optional[str] = None,
+                 access_token: Optional[str] = None,
+                 
+                ):
         
 
             
@@ -81,8 +95,13 @@ class Config:
         """
         
         # --- 1. Основные параметры ---
-        self.telegram_token = telegram_token
+        self.telegram_token = token
         self.stage = stage
+
+        self.WEBHOOK_URL = webhook or os.getenv("WEBHOOK") or None
+        self.WEBHOOK_PATH = webhook_path or os.getenv("WEBHOOK_PATH") or None
+
+        self.WEBAPP_URL = webapp_url or os.getenv("WEBAPP_URL") or None
         
         is_dev = self.stage == 'dev'
         
@@ -121,22 +140,21 @@ class Config:
         self.redis_ttl = 60*60*24
 
         # Префиксы Redis (константы)
-        self.redis_history_prefix = "history"
-        self.redis_user_prefix = "user"
-        self.redis_bot_prefix = "bot"
-        self.redis_chat_prefix = "chat"
-        self.redis_conv_prefix = "conv"
+        self.redis_history_prefix = redis_history_prefix
+        self.redis_user_prefix = redis_user_prefix
+        self.redis_bot_prefix = redis_bot_prefix
+        self.redis_chat_prefix = redis_chat_prefix
+        self.redis_conv_prefix = redis_conv_prefix
+        self.redis_metadata_prefix = redis_metadata_prefix
 
-        # --- 4. Параметры AI ---
-        self.base_api_key = base_api_key if base_api_key is not None else os.getenv("BASIC_API_KEY")
+        # --- 4. Параметры AI
+        self.ai_api_key = ai_api_key if ai_api_key is not None else os.getenv("AI_API_KEY")
         self.access_token = access_token
         
         # Константы модели
         self.model_name = "GigaChat-2-Max"
         self.model_kwargs = {}
-        
-        # --- 5. Проверка критических параметров ---
+
+
         if not self.telegram_token:
             raise ValueError("Telegram token is not provided.")
-        if not self.base_api_key and not self.access_token:
-            print("Warning: BASIC_API_KEY is missing. AI token renewal may fail.")

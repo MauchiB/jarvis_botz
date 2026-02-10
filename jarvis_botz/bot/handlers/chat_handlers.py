@@ -38,13 +38,15 @@ async def create_chat(update: Update, context: CustomTypes):
         context.user_data['allowed_num_chats'] = 10
 
     if context.user_data.get('num_chats') == context.user_data.get('allowed_num_chats'):
-        await update.effective_message.reply_text(f'Вы не можете создать больше чем {context.user_data.get('allowed_num_chats')} чатов')
+        await update.effective_message.reply_text(f'Вы не можете создать больше чем {context.user_data.get('allowed_num_chats')} чатов.'
+                                                  f'\nПожалуйста, удалите некоторые чаты и попробуйте снова.'
+                                                  f'\nВы остались в том же чате.')
         return
     
         
-    context.user_data['current_chat_id'] = str(uuid4())
+    context.user_data['session_id'] = str(uuid4())
     context.user_data['creating_chat'] = True
-    await update.message.reply_text("Чат будет создан при первом вашем сообщении в этом чате. (Название чата будет сгенерировано автоматически)")
+    await update.message.reply_text("Чат будет создан при первом вашем сообщении в этом чате.")
 
 
 
@@ -62,6 +64,7 @@ async def chat_list(update: Update, context: CustomTypes):
     chat_repo = context.chat_repo
 
     chat_data = await chat_repo.get_all_chats(user_id=update.effective_user.id)
+
 
     if not chat_data:
         if callback:
@@ -103,15 +106,18 @@ async def chat_select(update: Update, context: CustomTypes):
     chat_repo = context.chat_repo
 
     if action == 'select_final':
-        context.user_data['current_chat_id'] = value
+        context.user_data['session_id'] = value
+        context.user_data['creating_chat'] = False
+
         await update.effective_message.delete()
 
     elif action == 'delete_final':
 
-        if context.user_data.get('current_chat_id') == value:
-            context.user_data['current_chat_id'] = None
+        if context.user_data.get('session_id') == value:
+            context.user_data['session_id'] = None
 
-        await chat_repo.delete_chat(user_id=update.effective_user.id, session_id=value)
+        await chat_repo.delete_chat_metadata(user_id=update.effective_user.id, session_id=value)
+        await context.llm.checkpointer.adelete_thread(thread_id=value)
         
         context.user_data['num_chats'] -= 1
         await chat_list(update, context)

@@ -1,18 +1,17 @@
 from telegram import (Update, ReplyKeyboardMarkup,
                        ReplyKeyboardRemove, KeyboardButton,
-                         InlineKeyboardButton, InlineKeyboardMarkup)
+                         InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo)
 
 from telegram.ext import (ContextTypes, ConversationHandler)
 import math
 from typing import List, Tuple
 
+import os
 
 
 keyboard = [
-    # Ряд 1: Конфигурация и Информация
+    [KeyboardButton('🤖 Выбрать ИИ'), KeyboardButton('💎 Купить токены')],
     [KeyboardButton('⚙️ Настройки'), KeyboardButton('ℹ️ Инфо')],
-    
-    # Ряд 2: Действия и Режимы
     [KeyboardButton('🗑️ Чаты'), KeyboardButton('🛠️ Инструменты')],
     [KeyboardButton('➕ Создать новый чат')]
 ]
@@ -25,7 +24,13 @@ start_keyboard = ReplyKeyboardMarkup(
 )
 
 
-
+set_model_keyboard = [
+        InlineKeyboardButton(text="🚀 GPT-5 Mini (OpenAI)", callback_data="model:select:openai/gpt-5-mini"),
+        InlineKeyboardButton(text="✨ Gemini Flash 2.5 Lite (Google)", callback_data="model:select:google/gemini-2.5-flash-lite"),
+        InlineKeyboardButton(text="🧠 Claude 3 Haiku (Anthropic)", callback_data="model:select:anthropic/claude-3-haiku"),
+        InlineKeyboardButton(text="🦙 Llama 4 70B (Meta)", callback_data="model:select:meta-llama/llama-4-maverick"),
+        InlineKeyboardButton(text="⚡ Mistral 675B (Mistral)", callback_data="model:select:mistralai/mistral-large-2512"),
+    ]
 
 
 
@@ -83,10 +88,10 @@ max_tokens = [
 ]
 
 languages = [
-    InlineKeyboardButton("🇷🇺 Русский", callback_data="language:select:ru"),
-    InlineKeyboardButton("🇬🇧 English", callback_data="language:select:en"),
-    InlineKeyboardButton("🇪🇸 Español", callback_data="language:select:es"),
-    InlineKeyboardButton("🇩🇪 Deutsch", callback_data="language:select:de"),
+    InlineKeyboardButton("🇷🇺 Русский", callback_data="language:select:russian"),
+    InlineKeyboardButton("🇬🇧 English", callback_data="language:select:english"),
+    InlineKeyboardButton("🇪🇸 Español", callback_data="language:select:spanish"),
+    InlineKeyboardButton("🇩🇪 Deutsch", callback_data="language:select:german"),
 ]
 
 styles = [
@@ -147,6 +152,7 @@ data_items = {
     'system_prompt': system_prompts, # Новый список
     'max_tokens': max_tokens, # Новый список
     'language': languages, # Новый список
+    'set_model':set_model_keyboard
 }
 
 

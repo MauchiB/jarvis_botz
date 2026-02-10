@@ -1,6 +1,6 @@
 from sqlalchemy import select, update, Boolean, Integer, String, DateTime, Numeric
 from sqlalchemy import or_
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 
 import os
@@ -15,8 +15,9 @@ ALLOWED_COLUMNS_UPDATE = ['tokens']
 
 from telegram.ext import BasePersistence, PersistenceInput
 
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 
+from jarvis_botz import app
 
 class UserRepository:
     def __init__(self, session):
@@ -24,8 +25,10 @@ class UserRepository:
     
 
 
-    async def get_user(self, id=None, username=None):
-        stmt = select(User).filter(or_(User.id == id, User.username == username)).options(selectinload(User.subsribers))
+    async def get_user(self, id=None, username=None) -> User:
+        stmt = select(User).filter(or_(User.id == id, User.username == username)).options(selectinload(User.subscribers), 
+                                                                                          selectinload(User.referrals), 
+                                                                                          joinedload(User.referral))
         result = await self.session.execute(stmt)
         user = result.scalars().first()
         return user
@@ -33,7 +36,7 @@ class UserRepository:
 
         
 
-    async def add_user(self, id, username, chat_id):
+    async def add_user(self, id, username, chat_id) -> User:
         user = User(id=id, username=username, chat_id=chat_id)
         self.session.add(user)
         await self.session.commit()
@@ -52,133 +55,170 @@ class UserRepository:
 
         
 
-    async def get_users_by_role(self, role):
+    async def get_users_by_role(self, role) -> List[User]:
         query = select(User).filter_by(role=role)
         result = await self.session.execute(query)
         result = result.scalars().all()
         return result
     
 
+    async def update_ref_user(self, user_id, ref_user_id) -> None:
+        current_user = await self.get_user(id=user_id)
+        ref_user = await self.get_user(id=ref_user_id)
 
+        if current_user and ref_user:
+            if current_user == ref_user:
+                return
+            if current_user.referral_id is not None:
+                return
+            
+            current_user.referrer = ref_user
+            await self.session.commit()
     
 
 
     
+
+
+    
+
+
+from typing import Any, Dict, Optional, Tuple
 
 class RedisPersistence(BasePersistence):
-    _instance = None
-    
-    def __init__(self, 
-                 redis_client: redis.asyncio.StrictRedis,
-                 cfg: Config,
-                 store_data: Optional[PersistenceInput] = None, # Добавляем это
-                 update_interval: float = 60):
+    def __init__(
+        self, 
+        redis_client: redis.asyncio.StrictRedis,
+        cfg: Config,
+        store_data: Optional[PersistenceInput] = None,
+        update_interval: float = 60
+    ):
         super().__init__(store_data=store_data, update_interval=update_interval)
         self.redis_client = redis_client
         self.cfg = cfg
 
-
     @classmethod
     async def create(cls, cfg: Config, store_data: Optional[PersistenceInput] = None, update_interval: float = 60):
-        client = await cls._get_client(cfg)
+        client = redis.asyncio.StrictRedis(
+            host=cfg.redis_host,
+            port=cfg.redis_port,
+            decode_responses=True
+        )
+        await client.ping()
         return cls(redis_client=client, cfg=cfg, store_data=store_data, update_interval=update_interval)
 
 
-    @classmethod
-    async def _get_client(cls, cfg: Config):
-        print(f'Connecting to Redis at {cfg.redis_url}...')
-        client = await redis.asyncio.StrictRedis(
-            host=cfg.redis_host,
-            decode_responses=True
-        )
-        ping = await client.ping()
-        print(f'Connection ping is {ping}')
-        return client
+    async def get_bot_data(self) -> Dict[str, Any]:
+        data = await self.redis_client.hget(self.cfg.redis_bot_prefix, "global")
+        return json.loads(data) if data else {}
+
+
+    async def update_bot_data(self, data: Dict[str, Any]) -> None:
+        await self.redis_client.hset(self.cfg.redis_bot_prefix, "global", json.dumps(data))
+
+
+    async def get_user_data(self) -> Dict[int, Dict[Any, Any]]:
+        raw_data = await self.redis_client.hgetall(self.cfg.redis_user_prefix)
+        if not raw_data:
+            return {}
+
+        return {int(k): json.loads(v) for k, v in raw_data.items()}
+
+    async def update_user_data(self, user_id: int, data: Dict[Any, Any]) -> None:
+        await self.redis_client.hset(self.cfg.redis_user_prefix, str(user_id), json.dumps(data))
+
     
+    async def refresh_user_data(self, user_id: int, user_data: Any, push:bool=True) -> None:
+        print('refreshing user data...')
+        if push:
+            # Вариант "Я изменил данные в Боте, сохрани их в Редис"
+            await self.update_user_data(user_id, user_data)
+        else:
+            raw = await self.redis_client.hget(self.cfg.redis_user_prefix, str(user_id))
+            if raw:
+                user_data.update(json.loads(raw))
 
 
 
-    async def _get_all_data(self, prefix):
-        keys = await self.redis_client.keys(f'{prefix}:*')
-        all_user_data = {}
-        for key in keys:
-            user_id = int(key.split(':')[1])
-            raw_data = await self.redis_client.get(key)
-            all_user_data[user_id] = json.loads(raw_data)
 
-        return all_user_data
-    
+    async def get_conversations(self, name: str) -> Dict[Tuple[Any, ...], Any]:
+        raw_data = await self.redis_client.hgetall(f"{self.cfg.redis_conv_prefix}:{name}")
+        if not raw_data:
+            return {}
+        
+        conversations = {}
+        for k, v in raw_data.items():
+            try:
+                parts = k.split('_')
+                key = tuple(int(p) for p in parts)
+                conversations[key] = json.loads(v)
+            except:
+                continue
+        return conversations
+
+    async def update_conversation(self, name: str, key: Tuple[int, ...], new_state: Optional[Any]) -> None:
+        str_key = "_".join(str(p) for p in key)
+        if new_state is None:
+            await self.redis_client.hdel(f"{self.cfg.redis_conv_prefix}:{name}", str_key)
+        else:
+            await self.redis_client.hset(f"{self.cfg.redis_conv_prefix}:{name}", str_key, json.dumps(new_state))
 
 
-    async def _update_data(self, name, key, value):
-        await self.redis_client.hset(name=name, key=key, value=value)
-    
+    async def get_chat_data(self) -> Dict[int, Dict[Any, Any]]:
+        raw_data = await self.redis_client.hgetall(self.cfg.redis_chat_prefix)
+        return {int(k): json.loads(v) for k, v in raw_data.items()} if raw_data else {}
 
-    async def get_bot_data(self):
-        return await self._get_all_data(self.cfg.redis_bot_prefix)
-    
-
-    async def get_user_data(self):
-        return await self._get_all_data(self.cfg.redis_user_prefix)
-    
-
-    async def get_conversations(self, name):
-        return await self._get_all_data(f'{self.cfg.redis_chat_prefix}:{name}')
-    
-
-    async def update_bot_data(self, data):
-        return await self._update_data(name=self.cfg.redis_bot_prefix, key='global', value=json.dumps(data))
-    
-
-    async def update_user_data(self, user_id, data):
-        return await self._update_data(name=self.cfg.redis_user_prefix, key=user_id, value=json.dumps(data))
-    
-    async def update_conversation(self, name, key, new_state):
-        return await self._update_data(name=name, key=f'{key[0]}_{key[1]}', value=new_state)
-    
+    async def update_chat_data(self, chat_id: int, data: Dict[Any, Any]) -> None:
+        await self.redis_client.hset(self.cfg.redis_chat_prefix, str(chat_id), json.dumps(data))
 
     async def flush(self) -> None:
-        if self.redis_client:
-            await self.redis_client.aclose()
-    
+        await self.redis_client.aclose()
+
+    async def drop_chat_data(self, chat_id: int) -> None: 
+        await self.redis_client.hdel(self.cfg.redis_chat_prefix, str(chat_id))
+
+    async def drop_user_data(self, user_id: int) -> None:
+        await self.redis_client.hdel(self.cfg.redis_user_prefix, str(user_id))
 
 
-    async def get_chat_data(self) -> Dict[int, Any]: return {}
-    async def update_chat_data(self, chat_id: int, data: Dict) -> None: pass
-    async def drop_chat_data(self, chat_id: int) -> None: pass
-    async def drop_user_data(self, user_id: int) -> None: pass
+
     async def refresh_bot_data(self, bot_data: Dict) -> None: pass
     async def refresh_chat_data(self, chat_id: int, chat_data: Any) -> None: pass
-    async def refresh_user_data(self, user_id: int, user_data: Any) -> None: pass
-    async def get_callback_data(self) -> Optional[Tuple[Any, Any]]: return None
-    async def update_callback_data(self, data: Tuple[Any, Any]) -> None: pass
-    
+    async def get_callback_data(self) -> None: pass
+    async def update_callback_data(self, data) -> None: pass
 
 
-    
-
-    async def delete_chat(self, user_id: str, session_id: str):
-        await self.redis_client.delete(f'{self.cfg.redis_history_prefix}:{session_id}')
-        await self.redis_client.hdel(f'{self.cfg.redis_chat_prefix}:{user_id}', session_id)
-
-
-    async def create_chat(self, user_id, session_key, metadata: dict):
-        await self._update_data(f'{self.cfg.redis_chat_prefix}:{user_id}', key=session_key, value=json.dumps(metadata))
-
-
-    async def get_chat(self, user_id, session_key):
-        chat = await self.redis_client.hget(f'{self.cfg.redis_chat_prefix}:{user_id}', session_key)
-        if chat:
-            chat = json.loads(chat)
-        return chat
 
 
     async def get_all_chats(self, user_id):
-        chats = await self.redis_client.hgetall(f'{self.cfg.redis_chat_prefix}:{user_id}')
-        all_chats = {}
-        for k, chat in chats.items():
-            all_chats[k] = json.loads(chat)
-        return all_chats
+        chats = await self.redis_client.hgetall(f"{self.cfg.redis_metadata_prefix}:{user_id}")
+        return {k: json.loads(v) for k, v in chats.items()} if chats else {}
+
+    async def delete_chat_metadata(self, user_id, session_id):
+        await self.redis_client.hdel(f"{self.cfg.redis_metadata_prefix}:{user_id}", session_id)
+        
+    async def update_chat_metadata(self, user_id, session_key, metadata: dict):
+        existing_data = await self.get_chat_metadata(user_id, session_key)
+        
+        if existing_data:
+            existing_data.update(metadata)
+            final_data = existing_data
+
+        else:
+            final_data = metadata
+
+        await self.redis_client.hset(
+            f"{self.cfg.redis_metadata_prefix}:{user_id}", 
+            session_key, 
+            json.dumps(final_data)
+        )
+
+    async def get_chat_metadata(self, user_id, session_key):
+        data = await self.redis_client.hget(f"{self.cfg.redis_metadata_prefix}:{user_id}", session_key)
+        return json.loads(data) if data else None
     
-    
-    
+
+
+    async def close(self):
+        await self.redis_client.close()
+
