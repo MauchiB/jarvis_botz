@@ -1,18 +1,16 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, select, BigInteger, Boolean, ForeignKey, DateTime, update
+from sqlalchemy import BigInteger, Boolean, ForeignKey, DateTime, String, Integer, Enum
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from sqlalchemy import or_
 from sqlalchemy.orm import Mapped, mapped_column
 
-import os
 from datetime import datetime, timezone
-
+from typing import TypeAlias
 from typing import Optional, List
+from jarvis_botz.config import Config
 
-
-def get_db_engine(cfg):
+def get_db_engine(cfg: Config):
     engine = create_async_engine(
-        url=cfg.postgres_url,
+        url=cfg.postgres.url,
         echo=False
         )
     return engine
@@ -21,15 +19,12 @@ def get_db_engine(cfg):
 
 async def init_db(engine):
     async with engine.begin() as conn:
-        
         await conn.run_sync(Base.metadata.create_all)
-    await engine.dispose()
 
 
 Base = declarative_base()
 
 
-from typing import TypeAlias
 SessionLocal: TypeAlias = sessionmaker[AsyncSession]
 
 
@@ -39,16 +34,14 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     username: Mapped[str] = mapped_column(String, unique=True, index=True)
-    tokens: Mapped[float] = mapped_column(Float, default=10)
-    role: Mapped[str] = mapped_column(String, default='user')
+    tokens: Mapped[int] = mapped_column(Integer, default=10)
+    role: Mapped[str] = mapped_column(Enum('user', 'developer', name='role_enum'), default='user')
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime(True), default=datetime.now(timezone.utc))
-    last_active_at: Mapped[datetime] = mapped_column(DateTime(True), default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(True), default=lambda: datetime.now(timezone.utc))
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     chat_id: Mapped[int] = mapped_column(BigInteger, index=True)
 
-    subscribers = relationship("Sub", back_populates="user")
-
-    referral_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey('users.id'))
+    referral_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey('users.id'), index=True)
 
     referral: Mapped[Optional["User"]] = relationship(
         'User', 
@@ -61,17 +54,3 @@ class User(Base):
         back_populates='referral'
     )
 
-
-
-
-class Sub(Base):
-    __tablename__ = 'subscribers'
-
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey('users.id'), index=True)
-    subscription_start_date: Mapped[datetime] = mapped_column(DateTime(True))
-    subscription_end_date: Mapped[datetime] = mapped_column(DateTime(True))
-    tokens_purchased: Mapped[float] = mapped_column(Float, default=0)
-
-    user = relationship("User", back_populates="subscribers")

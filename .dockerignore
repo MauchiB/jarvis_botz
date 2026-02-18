@@ -1,0 +1,61 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.swp
+*.tmp
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+botz_venv/
+
+# Byte-compiled / optimized / DLL files
+*.so
+*.dylib
+*.dll
+
+# Unit test / coverage reports
+.coverage
+htmlcov/
+.cache/
+.pytest_cache/
+
+# --- Project-specific ---
+.env
+.env.*
+!.env.example
+
+# SQLite (if used temporarily)
+*.db
+*.sqlite3
+
+# Jupyter
+.ipynb_checkpoints/
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Docker ---
+/dist/
+/build/
+*.tar
+docker-data/
+
+# --- Editors ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- PyCharm ---
+*.iml
+.idea/
+out/
+
+# --- Misc ---
+*.bak
+*.old

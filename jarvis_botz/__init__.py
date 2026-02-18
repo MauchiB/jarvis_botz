@@ -1,1 +1,0 @@
-from jarvis_botz.app import app

@@ -1,160 +1,134 @@
 import os
 
+class RedisConfig:
+    def __init__(
+        self,
+        host: str,
+        port: str,
+        ttl: int,
+        history_prefix: str,
+        metadata_prefix: str,
+        conv_prefix: str,
+        user_prefix: str,
+        bot_prefix: str,
+        chat_prefix: str,
+        chat_sessions_prefix: str,
+    ):
+        self.host = host
+        self.port = port
+        self.ttl = ttl
+        self.url = f"redis://{host}:{port}"
+
+        self.history_prefix = history_prefix
+        self.metadata_prefix = metadata_prefix
+        self.conv_prefix = conv_prefix
+        self.user_prefix = user_prefix
+        self.bot_prefix = bot_prefix
+        self.chat_prefix = chat_prefix
+        self.chat_sessions_prefix = chat_sessions_prefix
 
 
 
+class PostgresConfig:
+    def __init__(self, user, password, db, host, port):
+        self.url = (
+            f"postgresql+asyncpg://"
+            f"{user}:{password}@{host}:{port}/{db}"
+        )
 
-import os
-from typing import Optional, Dict, Any
-
-import os
-from typing import Optional, Dict, Any, Final
 
 
+class TelegramConfig:
+    def __init__(self, token, webhook_url, webhook_path, webhook_port, webapp_url, dev_promo):
+        self.token = token
+        self.webhook_url = webhook_url
+        self.webhook_path = webhook_path
+        self.webhook_port = webhook_port
+        self.webapp_url = webapp_url
+        self.dev_promo = dev_promo
 
-DEV_CONFIG = {
-    "postgres_user": "user_dev",
-    "postgres_password": "pass_dev",
-    "postgres_db": "db_dev",
-    "postgres_host": "localhost",
-    "postgres_port": "5432",
-    "redis_host": "localhost",
-    "redis_port": "6379",
-    "redis_ttl": "3600"
-}
+
+
+class AIConfig:
+    def __init__(self, api_key=None, base_url=None):
+        self.api_key = api_key
+        self.base_url = base_url
+
+
+class ServerConfig:
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        
+
 
 class Config:
-    telegram_token: str
-    stage: str
-    
-
-    model_name: Final[str]
-    model_kwargs: Dict[str, Any]
-    base_api_key: Optional[str]
-    access_token: Optional[str]
-
-
-    postgres_user: str
-    postgres_password: str
-    postgres_host: str
-    postgres_port: str
-    postgres_db: str
-    postgres_url: str
-
-
-    redis_host: str
-    redis_port: str
-
-    redis_url: Optional[str]
-    redis_ttl: Optional[str]
-    
-
-    redis_history_prefix: Final[str]
-    redis_metadata_prefix: Final[str]
-
-
-    def __init__(self, 
-                 token: str,
-                 stage: str,
-
-                 webhook_path:Optional[str] = None,
-                 webhook:Optional[str] = None,
-
-                 webapp_url:Optional[str] = None,
-
-                 postgres_user: Optional[str] = None,
-                 postgres_password: Optional[str] = None,
-                 postgres_db: Optional[str] = None,
-                 postgres_host: Optional[str] = None,
-                 postgres_port: Optional[str] = None,
-                 postgres_url: Optional[str] = None,
-
-                 redis_history_prefix: Optional[str] = 'history',
-                 redis_metadata_prefix: Optional[str] = 'metadata',
-                 redis_conv_prefix: Optional[str] = 'conv',
-                 redis_user_prefix: Optional[str] = 'user',
-                 redis_bot_prefix: Optional[str] = 'bot',
-                 redis_chat_prefix: Optional[str] = 'chat',
-
-                 redis_host: Optional[str] = None,
-                 redis_port: Optional[str] = None,
-                 # Остальные параметры
-                 redis_url: Optional[str] = None,
-                 redis_ttl: Optional[str] = None,
-
-                 ai_api_key: Optional[str] = None,
-                 access_token: Optional[str] = None,
-                 
-                ):
-        
-
-            
-                      
-        """
-        Инициализирует объект конфигурации.
-        """
-        
-        # --- 1. Основные параметры ---
-        self.telegram_token = token
+    def __init__(
+        self,
+        stage: str,
+        postgres: PostgresConfig,
+        redis: RedisConfig,
+        telegram: TelegramConfig,
+        ai: AIConfig,
+        server: ServerConfig
+    ):
         self.stage = stage
-
-        self.WEBHOOK_URL = webhook or os.getenv("WEBHOOK") or None
-        self.WEBHOOK_PATH = webhook_path or os.getenv("WEBHOOK_PATH") or None
-
-        self.WEBAPP_URL = webapp_url or os.getenv("WEBAPP_URL") or None
+        self.postgres = postgres
+        self.redis = redis
+        self.telegram = telegram
+        self.ai = ai
+        self.server = server
         
-        is_dev = self.stage == 'dev'
+    
+    @classmethod
+    def from_env(cls):
+        postgres = PostgresConfig(
+            user=os.getenv("POSTGRES_USER"),
+            password=os.getenv("POSTGRES_PASSWORD"),
+            db=os.getenv("POSTGRES_DB"),
+            host=os.getenv("POSTGRES_HOST"),
+            port=os.getenv("POSTGRES_PORT"),
+        )
+
+        redis = RedisConfig(
+            host=os.getenv("REDIS_HOST"),
+            port=os.getenv("REDIS_PORT"),
+            ttl=int(os.getenv("REDIS_TTL")),
+            history_prefix=os.getenv("REDIS_HISTORY_PREFIX", "history"),
+            metadata_prefix=os.getenv("REDIS_METADATA_PREFIX", "metadata"),
+            conv_prefix=os.getenv("REDIS_CONV_PREFIX", "conv"),
+            user_prefix=os.getenv("REDIS_USER_PREFIX", "user"),
+            bot_prefix=os.getenv("REDIS_BOT_PREFIX", "bot"),
+            chat_prefix=os.getenv("REDIS_CHAT_PREFIX", "chat"),
+            chat_sessions_prefix=os.getenv("REDIS_CHAT_SESSIONS_PREFIX", "chat_sessions"),
+        )
+
+        telegram = TelegramConfig(
+            token=os.getenv("TELEGRAM_BOT_TOKEN"),
+            webhook_url=os.getenv("WEBHOOK_URL"),
+            webhook_path=os.getenv("WEBHOOK_PATH"),
+            webhook_port=os.getenv("WEBHOOK_PORT"),
+            webapp_url=os.getenv("WEBAPP_URL"),
+            dev_promo=os.getenv("DEV_PROMO")
+        )
+
+        ai = AIConfig(
+            api_key=os.getenv("AI_API_KEY"),
+            base_url=os.getenv("AI_BASE_URL"),
+        )
         
-        # --- 2. Параметры PostgreSQL (логика: аргумент > ENV > dev default) ---
-        self.postgres_user = postgres_user or os.getenv("POSTGRES_USER", "user_dev" if is_dev else None)
-        self.postgres_password = postgres_password or os.getenv("POSTGRES_PASSWORD", "pass_dev" if is_dev else None)
-        self.postgres_db = postgres_db or os.getenv("POSTGRES_DB", "db_dev" if is_dev else None)
+        server = ServerConfig(
+            host=os.getenv("SERVER_HOST"),
+            port=int(os.getenv("SERVER_PORT"))
         
-        # Для dev устанавливаем 'localhost'
-        self.postgres_host = postgres_host or os.getenv("POSTGRES_HOST", "localhost" if is_dev else None)
-        self.postgres_port = postgres_port or os.getenv("POSTGRES_PORT", "5432") # Порт часто одинаков
+        ) 
 
 
-        if self.postgres_user and self.postgres_password and self.postgres_host and self.postgres_db:
-            # Используем postgresql+asyncpg для SQLAlchemy 
-            self.postgres_url = (
-                f"postgresql+asyncpg://"
-                f"{self.postgres_user}:{self.postgres_password}@"
-                f"{self.postgres_host}:{self.postgres_port}/"
-                f"{self.postgres_db}"
-            )
-        else:
-            self.postgres_url = None # Невозможно сформировать корректный URL
-            print("Warning: Insufficient PostgreSQL parameters to form a connection URL.")
-
-
-
-        # --- 3. Параметры Redis (логика: аргумент > ENV > dev default) ---
-        # Для dev устанавливаем 'localhost'
-        self.redis_host = redis_host or os.getenv("REDIS_HOST", "localhost" if is_dev else None)
-        self.redis_port = redis_port or os.getenv("REDIS_PORT", "6379")
-        
-        # Использование URL: если явно не задан, формируем из хоста/порта, 
-        # или используем переданный redis_url
-        self.redis_url = redis_url or (f"redis://{self.redis_host}:{self.redis_port}" if self.redis_host else None)
-        self.redis_ttl = 60*60*24
-
-        # Префиксы Redis (константы)
-        self.redis_history_prefix = redis_history_prefix
-        self.redis_user_prefix = redis_user_prefix
-        self.redis_bot_prefix = redis_bot_prefix
-        self.redis_chat_prefix = redis_chat_prefix
-        self.redis_conv_prefix = redis_conv_prefix
-        self.redis_metadata_prefix = redis_metadata_prefix
-
-        # --- 4. Параметры AI
-        self.ai_api_key = ai_api_key if ai_api_key is not None else os.getenv("AI_API_KEY")
-        self.access_token = access_token
-        
-        # Константы модели
-        self.model_name = "GigaChat-2-Max"
-        self.model_kwargs = {}
-
-
-        if not self.telegram_token:
-            raise ValueError("Telegram token is not provided.")
+        return cls(
+            stage=os.getenv("STAGE"),
+            postgres=postgres,
+            redis=redis,
+            telegram=telegram,
+            ai=ai,
+            server=server
+        )

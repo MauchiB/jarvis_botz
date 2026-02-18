@@ -1,48 +1,48 @@
-from typing import Generic, TypeVar, Dict, TypeAlias, Any, TypedDict, Optional, Type
-from telegram.ext import ContextTypes, CallbackContext, ExtBot, Application
+from telegram.ext import CallbackContext, ExtBot, Application
 from jarvis_botz.bot.db.user_repo import RedisPersistence, UserRepository
 from jarvis_botz.bot.db.schemas import SessionLocal
 from jarvis_botz.ai.llm import AIGraph
 
-
-
-
-
-
-
-from dataclasses import dataclass
+from typing import Dict, Optional, Type
 
 class CustomApplication(Application):
-    def __init__(self, *, bot, update_queue, updater, job_queue, update_processor, persistence, context_types, post_init, post_shutdown, post_stop):
-        super().__init__(bot=bot, update_queue=update_queue, updater=updater, 
-                         job_queue=job_queue, update_processor=update_processor, 
-                         persistence=persistence, context_types=context_types, post_init=post_init, 
-                         post_shutdown=post_shutdown, post_stop=post_stop)
-        
+    llm: Optional[AIGraph] = None
+    session_factory: Optional[SessionLocal] = None
+    chat_repo: Optional[RedisPersistence] = None
+    user_repo_class: Optional[Type[UserRepository]] = None
 
-        self.llm: AIGraph = None
-        self.session_factory: SessionLocal = None
-        self.chat_repo: RedisPersistence = None
-        self.user_repo: UserRepository = None
 
 class CustomTypes(CallbackContext[ExtBot, Dict, Dict, Dict]):
-    def __init__(self, application, chat_id = None, user_id = None):
-        super().__init__(application, chat_id, user_id)
+    @property
+    def app(self) -> CustomApplication:
+        return self.application
 
 
     @property
     def chat_repo(self) -> RedisPersistence:
+        if not self.application.chat_repo:
+            raise RuntimeError("Chat repository is not initialized.")
+        
         return self.application.chat_repo
 
     @property
     def session_factory(self) -> SessionLocal:
+        if not self.application.session_factory:
+            raise RuntimeError("Session factory is not initialized.")
+        
         return self.application.session_factory
 
     @property
     def llm(self) -> AIGraph:
+        if not self.application.llm:
+            raise RuntimeError("LLM is not initialized.")
+        
         return self.application.llm
 
-    def user_repo(self, session) -> UserRepository:
-        repo_class = self.application.user_repo
+    def get_user_repo(self, session) -> UserRepository:
+        if not self.application.user_repo_class:
+            raise RuntimeError("User repository class is not set.")
+        
+        repo_class = self.application.user_repo_class
         return repo_class(session)
     

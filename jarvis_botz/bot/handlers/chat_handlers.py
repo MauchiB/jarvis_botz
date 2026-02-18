@@ -1,144 +1,191 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
-from jarvis_botz.utils import create_grid_paged_menu
-import os
-from typing import List, Tuple
+from __future__ import annotations
 
-from jarvis_botz.utils import required_permission, check_user, control_tokens
 from uuid import uuid4
-import time
+from typing import List, Tuple, Optional
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    CallbackQuery,
+)
+
+from jarvis_botz.utils import create_grid_paged_menu, check_user
 from jarvis_botz.bot.contexttypes import CustomTypes
 
 
-state_chat_name = 5
+STATE_CHAT_NAME = 5
+
+# ---- CALLBACK ACTIONS ----
+CHAT_PREFIX = "chat"
+ACTION_SELECT_FINAL = "select_final"
+ACTION_DELETE_FINAL = "delete_final"
+ACTION_SELECT_ACTION = "select_action"
+ACTION_QUIT = "quit"
+
+QUIT_RETURN = "_quit_return"
+QUIT_DELETE = "_quit_delete"
+
+DEFAULT_ALLOWED_CHATS = 10
 
 
 
-def chat_create_button_action(session_id:str) -> List[InlineKeyboardButton]:
-    chat_inline = [
 
-    [
-        InlineKeyboardButton("🗑️ Удалить чат", callback_data=f'chat:delete_final:{session_id}'),
-        InlineKeyboardButton("✅ Выбрать Чат", callback_data=f'chat:select_final:{session_id}')
-    ],
-
-    [
-        InlineKeyboardButton("❌ Назад", callback_data=f'chat:quit:_quit_return') 
+def chat_create_button_action(session_id: str) -> InlineKeyboardMarkup:
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "🗑️ Удалить чат",
+                callback_data=f"{CHAT_PREFIX}:{ACTION_DELETE_FINAL}:{session_id}",
+            ),
+            InlineKeyboardButton(
+                "✅ Выбрать Чат",
+                callback_data=f"{CHAT_PREFIX}:{ACTION_SELECT_FINAL}:{session_id}",
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "❌ Назад",
+                callback_data=f"{CHAT_PREFIX}:{ACTION_QUIT}:{QUIT_RETURN}",
+            )
+        ],
     ]
-           ]
-    chat_inline = InlineKeyboardMarkup(chat_inline)
-    return chat_inline
+
+    return InlineKeyboardMarkup(keyboard)
+
+
 
 
 @check_user()
-async def create_chat(update: Update, context: CustomTypes):
+async def create_chat(update: Update, context: CustomTypes) -> None:
+    user_data = context.user_data
 
-    if not context.user_data.get('num_chats') and not context.user_data.get('allowed_num_chats'):
-        context.user_data['num_chats'] = 0
-        context.user_data['allowed_num_chats'] = 10
+    user_data.setdefault("num_chats", 0)
+    user_data.setdefault("allowed_num_chats", DEFAULT_ALLOWED_CHATS)
 
-    if context.user_data.get('num_chats') == context.user_data.get('allowed_num_chats'):
-        await update.effective_message.reply_text(f'Вы не можете создать больше чем {context.user_data.get('allowed_num_chats')} чатов.'
-                                                  f'\nПожалуйста, удалите некоторые чаты и попробуйте снова.'
-                                                  f'\nВы остались в том же чате.')
+    num_chats: int = user_data["num_chats"]
+    allowed: int = user_data["allowed_num_chats"]
+
+    if num_chats >= allowed:
+        text = (
+            f"Вы не можете создать больше чем {allowed} чатов.\n"
+            "Пожалуйста, удалите некоторые чаты и попробуйте снова.\n"
+            "Вы остались в том же чате."
+        )
+        await update.effective_message.reply_text(text)
         return
-    
-        
-    context.user_data['session_id'] = str(uuid4())
-    context.user_data['creating_chat'] = True
-    await update.message.reply_text("Чат будет создан при первом вашем сообщении в этом чате.")
+
+    user_data["session_id"] = str(uuid4())
+    user_data["creating_chat"] = True
+
+    await update.effective_message.reply_text(
+        "Чат будет создан при первом вашем сообщении в этом чате."
+    )
+
 
 
 
 @check_user()
-async def chat_list(update: Update, context: CustomTypes):
-    callback = update.callback_query
-    page = 0
+async def chat_list(update: Update, context: CustomTypes) -> None:
+    callback: Optional[CallbackQuery] = update.callback_query
+    page: int = 0
 
-    if callback:
-        prefix, action, page = callback.data.split(':')
-        if not page.isdigit():
-            page = 0
-
+    if callback and callback.data:
+        parts = callback.data.split(":")
+        if len(parts) >= 3 and parts[2].isdigit():
+            page = int(parts[2])
 
     chat_repo = context.chat_repo
+    user_id = update.effective_user.id
 
-    chat_data = await chat_repo.get_all_chats(user_id=update.effective_user.id)
-
+    chat_data: List[Tuple[str, dict]] = await chat_repo.get_all_chats(
+        user_id=user_id
+    )
 
     if not chat_data:
+        text = "У вас еще нет созданных чатов. Пожалуйста, создайте чат сначала."
+
         if callback:
             await callback.answer()
-            await update.effective_message.edit_text("У вас еще нет созданных чатов. Пожалуйста, создайте чат сначала.")
-            return
+            await update.effective_message.edit_text(text)
         else:
-            await update.effective_message.reply_text("У вас еще нет созданных чатов. Пожалуйста, создайте чат сначала.")
-            return
-    
+            await update.effective_message.reply_text(text)
+        return
 
-    buttons_data = []
-    for chat in chat_data.values():
-        buttons_data.append( (chat['name'], chat['session_id']) )
-    
-    
-    chat_list = create_grid_paged_menu(all_items=buttons_data, prefix='chat', action='select_action', page=int(page), col=1, row=5, quit_button='_quit_delete')
-    
+    buttons_data = [
+        (metadata.get("name", "Без названия"), session_id)
+        for session_id, metadata in chat_data
+    ]
+
+    chat_menu = create_grid_paged_menu(
+        all_items=buttons_data,
+        prefix=CHAT_PREFIX,
+        action=ACTION_SELECT_ACTION,
+        page=page,
+        col=1,
+        row=5,
+        quit_button=QUIT_DELETE,
+    )
+
+    text = f"Управление вашими чатами ({context.user_data.get('num_chats', 0)}):"
+
     if callback:
         await callback.answer()
-        await update.effective_message.edit_text(
-            f"Управление вашими чатами({context.user_data.get('num_chats')}):",
-            reply_markup=chat_list
-        )
+        await update.effective_message.edit_text(text, reply_markup=chat_menu)
     else:
-        await update.message.reply_text(
-            f"Управление вашими чатами({context.user_data.get('num_chats')}):",
-            reply_markup=chat_list
-        )
+        await update.effective_message.reply_text(text, reply_markup=chat_menu)
+
 
 
 
 @check_user()
-async def chat_select(update: Update, context: CustomTypes):
-    callback = update.callback_query
-    args = callback.data.split(':')
-    prefix, action, value = args[0], args[1], args[2]
+async def chat_select(update: Update, context: CustomTypes) -> None:
+    callback: CallbackQuery = update.callback_query
+    if not callback or not callback.data:
+        return
+
+    _, action, value = callback.data.split(":")
 
     chat_repo = context.chat_repo
+    user_data = context.user_data
+    user_id = update.effective_user.id
 
-    if action == 'select_final':
-        context.user_data['session_id'] = value
-        context.user_data['creating_chat'] = False
-
+    
+    if action == ACTION_SELECT_FINAL:
+        user_data["session_id"] = value
+        user_data["creating_chat"] = False
         await update.effective_message.delete()
 
-    elif action == 'delete_final':
 
-        if context.user_data.get('session_id') == value:
-            context.user_data['session_id'] = None
+    elif action == ACTION_DELETE_FINAL:
+        if user_data.get("session_id") == value:
+            user_data["session_id"] = None
 
-        await chat_repo.delete_chat_metadata(user_id=update.effective_user.id, session_id=value)
+        await chat_repo.delete_chat_metadata(user_id=user_id, session_id=value)
+        await chat_repo.remove_chat_session(user_id=user_id, session_id=value)
         await context.llm.checkpointer.adelete_thread(thread_id=value)
-        
-        context.user_data['num_chats'] -= 1
+
+        user_data["num_chats"] = max(user_data.get("num_chats", 1) - 1, 0)
+
         await chat_list(update, context)
 
 
-    elif action == 'quit' and value == '_quit_return':
+    elif action == ACTION_QUIT and value == QUIT_RETURN:
         await chat_list(update, context)
 
-    elif action == 'quit' and value == '_quit_delete':
+
+    elif action == ACTION_QUIT and value == QUIT_DELETE:
         await update.effective_message.delete()
 
 
-    elif action == 'select_action':
+    elif action == ACTION_SELECT_ACTION:
         keyboard = chat_create_button_action(session_id=value)
-        await update.effective_message.edit_text("Выберите действие: удалить или выбрать чат.", reply_markup=keyboard)
-        await callback.answer()
-
+        await update.effective_message.edit_text(
+            "Выберите действие: удалить или выбрать чат.",
+            reply_markup=keyboard,
+        )
 
     await callback.answer()
-
-
 
 
 

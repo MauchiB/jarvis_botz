@@ -1,156 +1,199 @@
-from telegram import Update, helpers, Poll
-from jarvis_botz.bot.contexttypes import CustomTypes
-from functools import wraps
+from __future__ import annotations
 
-from jarvis_botz.utils import get_job_text
-import hashlib
-from telegram import ReplyKeyboardMarkup, KeyboardButton, WebAppInfo, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
-from jarvis_botz.bot.handlers.chat_handlers import chat_select
 import json
-
-from telegram.helpers import escape_markdown
-from telegram.ext import InlineQueryHandler
-from telegram import InlineQueryResult, InlineQueryResultArticle, InputMessageContent, InputTextMessageContent
 import uuid
+import logging
+from typing import Any, Dict
+
+from telegram import (
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    Poll,
+    helpers,
+)
+
+from jarvis_botz.bot.contexttypes import CustomTypes
+from jarvis_botz.utils import get_job_text
 from jarvis_botz.ai.prompts import get_inline_fast_help_prompt
 
 
-async def query_handler(update: Update, context: CustomTypes):
-    query = update.inline_query.query
+logger = logging.getLogger(__name__)
 
-    if not query:
+
+
+TEMP_GRADE_KEY = "temporary_answer_grade"
+GLOBAL_GRADE_KEY = "global_answer_grade"
+
+POLL_CHOICES = [
+    "⭐️ Ужасно",
+    "⭐️⭐️ Плохо",
+    "⭐️⭐️⭐️ Ок",
+    "⭐️⭐️⭐️⭐️ Хорошо",
+    "⭐️⭐️⭐️⭐️⭐️ Супер",
+]
+
+
+
+
+async def query_handler(update: Update, context: CustomTypes) -> None:
+    inline_query = update.inline_query
+    if not inline_query or not inline_query.query:
         return
-    
+
+    query = inline_query.query.strip()
 
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🤖 Обработка запроса...", callback_data="none")]
     ])
-    
 
-    results = [
-        InlineQueryResultArticle(
-            id=str(uuid.uuid4()),
-            title="Cпроси Jarvis Botz",
-            description=f"Jarvis ответит на: {query}",
-            input_message_content=InputTextMessageContent(
-                message_text=f"<b>Вопрос: {query}</b>\nJarvis Botz: думаю...",
-                parse_mode='HTML'
-            ),
-            reply_markup=keyboard
-            
-        )
-    ]
+    result = InlineQueryResultArticle(
+        id=str(uuid.uuid4()),
+        title="Спроси Jarvis Botz",
+        description=f"Jarvis ответит на: {query}",
+        input_message_content=InputTextMessageContent(
+            message_text=f"<b>Вопрос: {query}</b>\nJarvis Botz: думаю...",
+            parse_mode="HTML",
+        ),
+        reply_markup=keyboard,
+    )
+
+    await inline_query.answer(results=[result], cache_time=60)
 
 
-    await update.inline_query.answer(results=results, cache_time=300)
 
 
-async def chosen_query_handler(update: Update, context: CustomTypes):
-    chosen_result = update.chosen_inline_result
-    query = chosen_result.query
-
-    print("Chosen query:", query)
-
-    if not chosen_result.inline_message_id:
-        print("Ошибка: inline_message_id отсутствует!")
+async def chosen_query_handler(update: Update, context: CustomTypes) -> None:
+    chosen = update.chosen_inline_result
+    if not chosen:
         return
 
+    query = chosen.query
 
     answer = await context.llm.custom_generation(
         prompt_func=get_inline_fast_help_prompt,
-        query=query)
-    
+        query=query,
+    )
+
+    text_html = f"<b>Вопрос: {query}</b>\nJarvis Botz: {answer}"
+    text_plain = f"Вопрос: {query}\nJarvis Botz: {answer}\n\nСорри, форматирование сломалось."
+
     try:
-        await context.bot.edit_message_text(inline_message_id=chosen_result.inline_message_id,
-                                            text=f"<b>Вопрос: {query}</b>\nJarvis Botz: {answer}",
-                                      parse_mode='HTML')
+        await context.bot.edit_message_text(
+            inline_message_id=chosen.inline_message_id,
+            text=text_html,
+            parse_mode="HTML",
+        )
     except Exception as e:
-        await context.bot.edit_message_text(inline_message_id=chosen_result.inline_message_id,
-                                            text=f"Вопрос: {query}\nJarvis Botz: {answer}" + '\n\nСорре, ИИ облажался с форматированием ответа.',)
-                                            
-
-
-async def webapp_data_handler(update: Update, context: CustomTypes):
-    data = json.loads(update.effective_message.web_app_data.data)
-    context.user_data['session_id'] = data.get('session_id')
-    context.user_data['creating_chat'] = False
+        logger.warning("HTML format failed: %s", e)
+        await context.bot.edit_message_text(
+            inline_message_id=chosen.inline_message_id,
+            text=text_plain,
+        )
 
 
 
 
-async def poll_handler(update: Update, context: CustomTypes, ai_answer:str=None):
+async def webapp_data_handler(update: Update, context: CustomTypes) -> None:
+    data_raw = update.effective_message.web_app_data.data
+    try:
+        data = json.loads(data_raw)
+    except json.JSONDecodeError:
+        logger.error("Invalid webapp json")
+        return
+
+    context.user_data["session_id"] = data.get("session_id")
+    context.user_data["creating_chat"] = False
+
+
+
+async def grade_poll_handler(update: Update, context: CustomTypes, ai_answer: str) -> None:
     chat_id = update.effective_chat.id
-    choices = ["⭐️ Ужасно", "⭐️⭐️ Плохо", "⭐️⭐️⭐️ Ок", "⭐️⭐️⭐️⭐️ Хорошо", "⭐️⭐️⭐️⭐️⭐️ Супер"]
-    poll_msg = await context.bot.send_poll(chat_id=chat_id, 
-                          question='Оцените качество ответа', 
-                          options=choices, 
-                          is_anonymous=False, 
-                          type=Poll.REGULAR)
-    
-    if 'temporary_answer_grade' not in context.bot_data:
-        context.bot_data['temporary_answer_grade'] = {}
 
-    context.bot_data['temporary_answer_grade'][poll_msg.poll.id] = {
-        'user_id': update.effective_user.id,
-        'answer': ai_answer,
-        'chat_id':update.effective_chat.id,
-        'message_id':poll_msg.message_id
+    poll_msg = await context.bot.send_poll(
+        chat_id=chat_id,
+        question="Оцените качество ответа",
+        options=POLL_CHOICES,
+        is_anonymous=False,
+        type=Poll.REGULAR,
+    )
+
+    temp_store: Dict[str, Any] = context.bot_data.setdefault(TEMP_GRADE_KEY, {})
+
+    temp_store[poll_msg.poll.id] = {
+        "user_id": chat_id,
+        "answer": ai_answer,
+        "chat_id": chat_id,
+        "message_id": poll_msg.message_id,
     }
 
 
-async def poll_answer_handler(update: Update, context: CustomTypes):
+async def poll_answer_handler(update: Update, context: CustomTypes) -> None:
     poll_answer = update.poll_answer
+    temp_store: Dict[str, Any] = context.bot_data.get(TEMP_GRADE_KEY, {})
 
-    poll_data = context.bot_data['temporary_answer_grade'].pop(poll_answer.poll_id)
+    poll_data = temp_store.pop(poll_answer.poll_id, None)
+    if not poll_data:
+        return
 
-    option = poll_answer.option_ids[0] + 1 #idx4=5star
+    option = poll_answer.option_ids[0] + 1
+    poll_data["option"] = option
 
-    poll_data['option'] = option
+    global_store: Dict[str, Any] = context.bot_data.setdefault(GLOBAL_GRADE_KEY, {})
+    global_store[poll_answer.poll_id] = poll_data
 
-    if 'global_answer_grade' not in context.bot_data:
-        context.bot_data['global_answer_grade'] = {}
-
-    context.bot_data['global_answer_grade'][poll_answer.poll_id] = poll_data
-
-    await context.bot.delete_message(chat_id=poll_data['chat_id'],
-                                     message_id=poll_data['message_id'])
-
-
-
-async def create_deeplink(update: Update, context: CustomTypes):
-    link = helpers.create_deep_linked_url(context.bot.username, payload=str(update.effective_user.id))
-    await update.effective_message.reply_text(f'Реферальная ссылка: {link}')
+    await context.bot.delete_message(
+        chat_id=poll_data["chat_id"],
+        message_id=poll_data["message_id"],
+    )
 
 
 
-    
 
-async def job_callback(context: CustomTypes):
+async def create_deeplink(update: Update, context: CustomTypes) -> None:
+    link = helpers.create_deep_linked_url(
+        context.bot.username,
+        payload=str(update.effective_user.id),
+    )
+    await update.effective_message.reply_text(f"Реферальная ссылка: {link}")
+
+
+
+
+async def job_callback(context: CustomTypes) -> None:
     chat_id = context.job.chat_id
 
-    text = await get_job_text(context=context, 
-                        query=context.user_data['last_query'], 
-                        answer=context.user_data['last_answer'])
+    chats = await context.chat_repo.get_all_chats(
+        user_id=context.job.user_id,
+        sort_key="last_interaction",
+        reverse=True,
+    )
 
-    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode='HTML')
+    last_chat = chats[0] if chats else None
+    if not last_chat:
+        return
 
+    metadata = last_chat[1]
+    query = metadata.get("last_query", "Нет данных")
+    answer = metadata.get("last_answer", "Нет данных")
 
-def update_job(update: Update, context: CustomTypes, time: int):
-    current_jobs = context.job_queue.get_jobs_by_name(str(update.effective_chat.id))
+    text = await get_job_text(context=context, query=query, answer=answer)
 
-    if current_jobs:
-        for job in current_jobs:
-            job.schedule_removal()
-        
-    context.job_queue.run_once(callback=job_callback, 
-                                when=time,
-                                chat_id=update.effective_chat.id,
-                                user_id=update.effective_user.id,
-                                name=str(update.effective_chat.id)
-                                )
-    
+    await context.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML")
 
 
-    
+async def reschedule_inactive_message_job(update: Update, context: CustomTypes, delay: int) -> None:
+    chat_id = str(update.effective_chat.id)
 
+    for job in context.job_queue.get_jobs_by_name(chat_id):
+        job.schedule_removal()
 
+    context.job_queue.run_once(
+        callback=job_callback,
+        when=delay,
+        chat_id=update.effective_chat.id,
+        user_id=update.effective_user.id,
+        name=chat_id,
+    )
